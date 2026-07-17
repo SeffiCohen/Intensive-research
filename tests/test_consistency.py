@@ -90,3 +90,80 @@ def test_claim_audit_gold_fixture_valid():
     for t in gold["tuples"]:
         assert t["expected_verdict"] in verdicts, t
         assert t["claim"] and t["source_passage"] is not None
+
+
+# ---- v2 consistency ----
+
+def test_checklists_parse_and_pinned():
+    base = os.path.join(ROOT, "skills", "intensive-research", "references", "checklists")
+    files = glob.glob(os.path.join(base, "*.json"))
+    assert len(files) >= 6
+    for f in files:
+        data = json.load(open(f, encoding="utf-8"))
+        assert data.get("items"), f
+        for it in data["items"]:
+            for key in ("id", "section", "requirement_text", "canonical_source_url",
+                        "severity", "auto_detectable"):
+                assert key in it, (f, it.get("id"), key)
+            assert it["severity"] in ("must", "should")
+            assert it["auto_detectable"] in ("regex", "structural", "llm-judge")
+            url = it["canonical_source_url"]
+            # Pin stable PMC/journal/DOI/publisher URLs, never EQUATOR slugs (they 404).
+            assert "equator-network.org" not in url, (f, it["id"])
+            assert url.startswith("http"), (f, it["id"])
+            if it["auto_detectable"] == "regex":
+                assert it.get("pattern"), (f, it["id"])
+            if it["auto_detectable"] == "structural":
+                assert it.get("check"), (f, it["id"])
+
+
+def test_no_llm_judge_mustpass_without_reviewer():
+    base = os.path.join(ROOT, "skills", "intensive-research", "references", "checklists")
+    for f in glob.glob(os.path.join(base, "*.json")):
+        for it in json.load(open(f, encoding="utf-8"))["items"]:
+            if it["auto_detectable"] == "llm-judge" and it["severity"] == "must":
+                assert it.get("reviewer"), (f, it["id"])  # must declare who adjudicates
+
+
+def test_dataset_registries_agree():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "scholar_apis", os.path.join(ROOT, "scripts", "scholar_apis.py"))
+    mod = importlib.util.module_from_spec(spec)
+    import sys as _s
+    _s.path.insert(0, os.path.join(ROOT, "scripts"))
+    spec.loader.exec_module(mod)
+    assert set(mod.DATASET_ADAPTERS.keys()) == set(mod.DATASET_SOURCES)
+    assert set(mod.DEFAULT_DATASET_SOURCES) <= set(mod.DATASET_SOURCES)
+
+
+def test_new_fanout_phases_wording():
+    for rel in ("skills/experiment-design/SKILL.md",
+                "skills/paper-writing/phases/2.5-figures.md",
+                "skills/intensive-research/phases/7-figures.md"):
+        txt = _read(rel)
+        assert "ONE message" in txt, rel
+
+
+def test_experiment_design_skill_present():
+    market = json.load(open(os.path.join(ROOT, ".claude-plugin", "marketplace.json")))
+    skills = market["plugins"][0]["skills"]
+    assert "./skills/experiment-design" in skills
+    assert os.path.isfile(os.path.join(ROOT, "skills", "experiment-design", "SKILL.md"))
+
+
+def test_v2_agents_present_and_legal():
+    for a in ("ir-style-analyst", "ir-dataset-scout", "ir-figure-designer", "ir-figure-critic"):
+        assert os.path.isfile(os.path.join(ROOT, "agents", f"{a}.md"))
+    # figure-critic must have Write but not Bash (persist critique, cannot execute).
+    critic = _read("agents/ir-figure-critic.md")
+    tools = re.search(r"^tools:\s*(.+)$", critic, re.M).group(1)
+    assert "Write" in tools and "Bash" not in tools
+
+
+def test_all_skill_descriptions_under_limit():
+    for f in glob.glob(os.path.join(ROOT, "skills", "**", "SKILL.md"), recursive=True):
+        txt = open(f, encoding="utf-8").read()
+        m = re.search(r"^description:\s*(.*)$", txt, re.M)
+        assert m, f
+        assert len(m.group(1)) <= 1024, (f, len(m.group(1)))

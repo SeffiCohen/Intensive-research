@@ -35,10 +35,23 @@ and meta-analytic pooling checks.
    heterogeneity (I²), check the model choice (fixed vs random) against the
    stated heterogeneity, and note publication-bias signals (funnel asymmetry).
 
+## Statistical-completeness rubric (v2, blocking)
+
+Every inferential claim must report an **effect size + a 95% CI + an exact
+p-value** (not "p<0.05" or "n.s."). A claim of significance without magnitude
+and uncertainty is a hard fail — it blocks G2 and is re-checked at G4. When the
+readiness gate delegates a `llm-judge` statistics item to you (e.g. CONSORT
+outcome reporting, meta-analysis model choice), write `adequate` /
+`inadequate: <reason>` to `readiness/<item-id>.done` if an adequacy-shard dir is
+provided. For meta-analyses: verify the stated fixed/random model matches the
+heterogeneity, and require a publication-bias assessment (funnel/Egger) when
+≥10 studies.
+
 ## Output (`stats-review.md`)
 
 Per numerical claim: value, recomputation, verdict, and any fallacy flag. Plus
-a blocking summary: count of `inconsistent` claims (must be zero to pass G2).
+a blocking summary: count of `inconsistent` claims and of significance-without-
+magnitude claims (both must be zero to pass G2).
 
 ## Boundaries
 

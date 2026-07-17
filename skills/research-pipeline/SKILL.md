@@ -20,12 +20,20 @@ show the user the FULL-pipeline cost estimate for the tier (research + writing
 
 | Stage | Skill | Advance only if |
 |---|---|---|
+| 0.5 Datasets (optional, if the topic proposes experiments) | experiment-design | G-D = pass |
 | 1 Research | intensive-research (mode research or systematic-review) | G1a, G1b = pass |
-| 2 Write | paper-writing (`--from research/<slug>`) | G2 = pass, audit-report exit 0 |
+| 2 Write | paper-writing (`--from research/<slug>` [`--venue` `--figures`]) | G2 = pass, audit-report exit 0 |
 | 3 Review | peer-review (panel per tier) | decision rendered |
 | 4 Revise | paper-writing revision of P0/P1 items | loop cap per tier; re-review narrow |
 | 5 Final gate | `scholar.py audit-report` on the final text (G3) | exit 0 |
+| 5.5 Submission readiness | `scholar.py readiness` (G4) + reviewer adequacy shards | exit 0 AND all `.done` adequate |
 | 6 Deliver | — | — |
+
+When the topic proposes running experiments, insert Stage 0.5: run
+`experiment-design` (dataset discovery + G-D dataset-integrity gate) and carry
+the `run_mode` (`proposal` unless the user ran experiments and attests to their
+provenance) forward into writing and readiness. The plugin never runs
+experiments or fabricates results.
 
 Between every stage: re-read `research/<slug>/passport.yaml` and `state.yaml`.
 If the previous stage's gate is not `pass`, DO NOT advance — report what is

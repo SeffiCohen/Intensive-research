@@ -121,3 +121,125 @@ def test_export_bibtex_and_ris(tmp_path=None):
                                 "export", "--in", cp, "--format", fmt],
                                capture_output=True, text=True, timeout=60)
             assert r.returncode == 0 and needle in r.stdout, (fmt, r.stdout[:200])
+
+
+# ---- v2: datasets, style, originality, readiness, prisma ----
+
+def test_dataset_normalize_license_and_access():
+    hf = apis.adapter_hf_datasets.__wrapped__ if hasattr(apis.adapter_hf_datasets, "__wrapped__") else None
+    # _dataset + _license_block directly (no network)
+    rec = apis._dataset("hf", "q", native_id="x/y", title="X",
+                        license=apis._license_block(spdx="cc-by-nc-4.0", name="cc-by-nc-4.0"),
+                        modalities=["image"])
+    assert rec["license"]["noncommercial"] is True
+    assert rec["license"]["is_open"] is False
+    rec2 = apis._dataset("hf", "q", native_id="a", title="A",
+                         license=apis._license_block(spdx="mit"))
+    assert rec2["license"]["is_open"] is True and rec2["license"]["noncommercial"] is False
+    rec3 = apis._dataset("dc", "q", native_id="b", title="B")  # no license
+    assert rec3["license"]["is_open"] is None  # unknown, not fabricated
+
+
+def test_dataset_mirror_collapse():
+    a = apis._dataset("hf", "q", native_id="cv", title="Common Voice", creators=["Mozilla"], doi="10.1/cv")
+    b = apis._dataset("zenodo", "q", native_id="99", title="Common Voice", creators=["Mozilla"], doi="10.1/cv")
+    out = apis.collapse_dataset_mirrors([a, b])
+    assert len(out) == 1 and len(out[0]["mirrors"]) == 1
+
+
+def test_dataset_not_paper_clustered():
+    rec = apis._dataset("hf", "q", native_id="x", title="X")
+    assert scholar._cluster_key(rec) is None  # dataset records never enter paper dedup
+
+
+def _fitness(rec, spec):
+    return scholar._dataset_fitness_one(rec, spec)
+
+
+def test_fitness_license_veto():
+    rec = apis._dataset("hf", "q", native_id="x", title="X", modalities=["text"],
+                        task_categories=["text-classification"],
+                        license=apis._license_block(spdx="cc-by-nc-4.0", name="cc-by-nc-4.0"),
+                        access={"right": "open"}, size={"num_instances": 50000})
+    v = _fitness(rec, {"task": "text-classification", "modality": "text",
+                       "usage": {"commercial": True}})
+    assert v["verdict"] == "unfit" and "license_usage_rights" in v["gates_triggered"]
+
+
+def test_fitness_unknown_license_conditional():
+    rec = apis._dataset("dc", "q", native_id="x", title="X", modalities=["text"])
+    v = _fitness(rec, {"task": "text", "modality": "text", "usage": {"commercial": True}})
+    assert v["verdict"] in ("conditional",) and v["review_flags"]
+
+
+def test_fitness_pii_forces_ethics_gate():
+    # A face dataset with no ethics statement -> ethics gate veto regardless of spec.
+    rec = apis._dataset("hf", "q", native_id="faces", title="Celebrity faces",
+                        modalities=["face"], license=apis._license_block(spdx="mit"),
+                        access={"right": "open"})
+    v = _fitness(rec, {"task": "classification", "modality": "face",
+                       "ethics_constraints": {"human_subjects": False}})
+    assert v["verdict"] == "unfit" and "ethics_consent_pii" in v["gates_triggered"]
+
+
+def _run(*args, **kw):
+    env = dict(os.environ, IR_SKIP_RETRACTIONWATCH="1")
+    return subprocess.run([sys.executable, os.path.join(SCRIPTS, "scholar.py"), *args],
+                          capture_output=True, text=True, env=env, timeout=120, **kw)
+
+
+def test_emit_prisma_counts_in_dot():
+    with tempfile.TemporaryDirectory() as td:
+        cp = os.path.join(td, "c.json")
+        json.dump({"identified": {"a": 100, "b": 40}, "duplicates_removed": 30,
+                   "included": 60}, open(cp, "w"))
+        r = _run("emit-prisma", "--counts", cp, "--format", "dot")
+        assert r.returncode == 0 and "n=140" in r.stdout and "n=60" in r.stdout
+
+
+def test_originality_flags_verbatim_and_passes_clean():
+    with tempfile.TemporaryDirectory() as td:
+        srcdir = os.path.join(td, "src")
+        os.makedirs(srcdir)
+        open(os.path.join(srcdir, "s.txt"), "w").write(
+            "the transformer architecture uses self attention to process sequences in parallel")
+        bad = os.path.join(td, "bad.md")
+        open(bad, "w").write("Intro. the transformer architecture uses self attention to process sequences in parallel here.")
+        ok = os.path.join(td, "ok.md")
+        open(ok, "w").write("We propose an entirely different mechanism for modeling ordered data.")
+        rb = _run("originality", "--draft", bad, "--against", srcdir, "--max-verbatim-words", "6",
+                  "--out", os.path.join(td, "b.json"))
+        ro = _run("originality", "--draft", ok, "--against", srcdir, "--max-verbatim-words", "6",
+                  "--out", os.path.join(td, "o.json"))
+        assert rb.returncode == 1 and ro.returncode == 0
+
+
+def test_readiness_pass_and_fail():
+    with tempfile.TemporaryDirectory() as td:
+        bad = os.path.join(td, "bad.md")
+        open(bad, "w").write("# Abstract\nHi.\n## Results\nWe found p<0.05.\n## References\n[1]")
+        rb = _run("readiness", "--manuscript", bad, "--checklist-set", "frontmatter",
+                  "--out", os.path.join(td, "rb.json"))
+        assert rb.returncode == 1
+        rep = json.load(open(os.path.join(td, "rb.json")))
+        assert rep["summary"]["orphan_p_values"] >= 1
+
+
+def test_readiness_proposal_blocks_results():
+    with tempfile.TemporaryDirectory() as td:
+        m = os.path.join(td, "m.md")
+        open(m, "w").write("# Abstract\nPlan.\n## Results\nWe achieved 95% accuracy.\n")
+        r = _run("readiness", "--manuscript", m, "--checklist-set", "frontmatter",
+                 "--run-mode", "proposal", "--out", os.path.join(td, "r.json"))
+        assert r.returncode == 1
+        rep = json.load(open(os.path.join(td, "r.json")))
+        assert rep["summary"]["proposal_violations"] >= 1
+
+
+def test_style_profile_no_long_strings():
+    # A profile-shaped object with a leaked sentence must be caught.
+    leaked = {"terminology": {"shared_domain_terms": ["this is a long leaked sentence from source"]}}
+    assert scholar._profile_has_long_strings(leaked)
+    clean = {"terminology": {"shared_domain_terms": ["neural", "attention"]},
+             "sentences": {"mean_len_words": 20}}
+    assert scholar._profile_has_long_strings(clean) is None

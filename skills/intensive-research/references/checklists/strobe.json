@@ -1,0 +1,15 @@
+{
+  "checklist": "strobe",
+  "title": "STROBE — observational studies (cohort, case-control, cross-sectional)",
+  "version": "2007",
+  "items": [
+    {"id": "strobe-design", "section": "Methods", "requirement_text": "State the study design early in the paper.", "canonical_source_url": "https://doi.org/10.1016/j.jclinepi.2007.11.008", "severity": "must", "auto_detectable": "regex", "pattern": "cohort|case-control|cross-sectional|observational"},
+    {"id": "strobe-setting", "section": "Methods", "requirement_text": "Describe the setting, locations, and relevant dates.", "canonical_source_url": "https://doi.org/10.1016/j.jclinepi.2007.11.008", "severity": "must", "auto_detectable": "llm-judge", "reviewer": "ir-methodology-reviewer"},
+    {"id": "strobe-participants", "section": "Methods", "requirement_text": "Give eligibility criteria and sources/methods of participant selection.", "canonical_source_url": "https://doi.org/10.1016/j.jclinepi.2007.11.008", "severity": "must", "auto_detectable": "regex", "pattern": "eligibility|inclusion|participants were|recruited|enrolled"},
+    {"id": "strobe-variables", "section": "Methods", "requirement_text": "Define outcomes, exposures, predictors, and confounders.", "canonical_source_url": "https://doi.org/10.1016/j.jclinepi.2007.11.008", "severity": "must", "auto_detectable": "regex", "pattern": "outcome|exposure|confounder|covariate|predictor"},
+    {"id": "strobe-bias", "section": "Methods", "requirement_text": "Describe efforts to address potential sources of bias.", "canonical_source_url": "https://doi.org/10.1016/j.jclinepi.2007.11.008", "severity": "must", "auto_detectable": "llm-judge", "reviewer": "ir-devils-advocate"},
+    {"id": "strobe-statmethods", "section": "Methods", "requirement_text": "Describe all statistical methods, including confounding control.", "canonical_source_url": "https://doi.org/10.1016/j.jclinepi.2007.11.008", "severity": "must", "auto_detectable": "regex", "pattern": "regression|adjusted for|statistical|model|stratif"},
+    {"id": "strobe-effectsize", "section": "Results", "requirement_text": "Report effect estimates with confidence intervals, not p-values alone.", "canonical_source_url": "https://doi.org/10.1016/j.jclinepi.2007.11.008", "severity": "must", "auto_detectable": "llm-judge", "reviewer": "ir-statistician"},
+    {"id": "strobe-limitations", "section": "Discussion", "requirement_text": "Discuss limitations including sources of bias and imprecision.", "canonical_source_url": "https://doi.org/10.1016/j.jclinepi.2007.11.008", "severity": "must", "auto_detectable": "structural", "check": "has_limitations"}
+  ]
+}

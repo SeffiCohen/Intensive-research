@@ -65,3 +65,37 @@ def test_doctor_runs():
     r = _scholar("doctor", "--json")
     d = json.loads(r.stdout)
     assert any(c["check"] == "network:openalex" for c in d["checks"])
+
+
+# ---- v2 live smokes ----
+
+def test_venue_sample_resolves():
+    with tempfile.TemporaryDirectory() as td:
+        out = os.path.join(td, "v.json")
+        r = _scholar("venue-sample", "--venue", "Nature Machine Intelligence",
+                     "--n", "3", "--out", out)
+        assert r.returncode == 0, r.stderr
+        d = json.load(open(out))
+        assert d["resolved"] and d["resolved"]["id"].startswith("S")
+        assert len(d["exemplars"]) >= 1
+
+
+def test_datasets_search_multi():
+    with tempfile.TemporaryDirectory() as td:
+        out = os.path.join(td, "ds.json")
+        r = _scholar("datasets", "search", "--q", "image classification",
+                     "--sources", "hf,datacite,zenodo", "--limit", "3", "--out", out)
+        assert r.returncode == 0, r.stderr
+        d = json.load(open(out))
+        ok = sum(1 for v in d["per_source"].values() if v["status"] == "ok")
+        assert ok >= 2 and d["collapse"]["unique"] >= 1
+
+
+def test_datasets_openml_keyword():
+    with tempfile.TemporaryDirectory() as td:
+        out = os.path.join(td, "o.json")
+        r = _scholar("datasets", "search", "--q", "mnist", "--sources", "openml",
+                     "--limit", "3", "--out", out)
+        assert r.returncode == 0
+        d = json.load(open(out))
+        assert d["per_source"]["openml"]["count"] >= 1

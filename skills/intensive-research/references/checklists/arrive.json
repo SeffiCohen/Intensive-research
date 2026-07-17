@@ -1,0 +1,14 @@
+{
+  "checklist": "arrive",
+  "title": "ARRIVE 2.0 — animal research (Essential 10)",
+  "version": "2.0",
+  "items": [
+    {"id": "arrive-studydesign", "section": "Methods", "requirement_text": "For each experiment, give the number of experimental and control groups.", "canonical_source_url": "https://doi.org/10.1371/journal.pbio.3000410", "severity": "must", "auto_detectable": "regex", "pattern": "control group|experimental group|treatment group|group(s)?"},
+    {"id": "arrive-samplesize", "section": "Methods", "requirement_text": "Report the exact number of experimental units and how sample size was decided.", "canonical_source_url": "https://doi.org/10.1371/journal.pbio.3000410", "severity": "must", "auto_detectable": "regex", "pattern": "sample size|number of animals|n\\s*=|per group|power"},
+    {"id": "arrive-inclusion", "section": "Methods", "requirement_text": "Describe inclusion/exclusion criteria for animals and data.", "canonical_source_url": "https://doi.org/10.1371/journal.pbio.3000410", "severity": "must", "auto_detectable": "regex", "pattern": "inclusion|exclusion|excluded|criteria"},
+    {"id": "arrive-randomization", "section": "Methods", "requirement_text": "Describe randomization and blinding.", "canonical_source_url": "https://doi.org/10.1371/journal.pbio.3000410", "severity": "must", "auto_detectable": "regex", "pattern": "randomi[sz]|blind(ed|ing)|allocation"},
+    {"id": "arrive-animals", "section": "Methods", "requirement_text": "Provide species, strain, sex, age/weight, and housing details.", "canonical_source_url": "https://doi.org/10.1371/journal.pbio.3000410", "severity": "must", "auto_detectable": "regex", "pattern": "species|strain|mice|rats|sex|male|female|weight|housing"},
+    {"id": "arrive-ethics", "section": "Declarations", "requirement_text": "State ethical review/approval for animal use.", "canonical_source_url": "https://doi.org/10.1371/journal.pbio.3000410", "severity": "must", "auto_detectable": "structural", "check": "has_ethics"},
+    {"id": "arrive-statistics", "section": "Methods", "requirement_text": "Describe the statistical methods and the experimental unit of analysis.", "canonical_source_url": "https://doi.org/10.1371/journal.pbio.3000410", "severity": "must", "auto_detectable": "llm-judge", "reviewer": "ir-statistician"}
+  ]
+}

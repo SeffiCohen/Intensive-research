@@ -29,6 +29,28 @@ deterministic (exit codes); retraction screening added; sequential personas
 replaced by parallel Claude Code subagents; governance/CI machinery removed;
 all orchestration, agents, commands, and skills rewritten.
 
+## New in v2 (original to Intensive Research)
+
+These capabilities are **not** derived from ARS; they are original to this
+project: venue style-learning (`scholar.py venue-sample`/`style-profile`/
+`originality` + `ir-style-analyst`), dataset discovery and vetting
+(`scholar.py datasets` + `ir-dataset-scout` + the `experiment-design` skill),
+the publication-figure subsystem (`ir-figure-designer`/`ir-figure-critic` +
+`emit-prisma`), and the reporting-standard submission-readiness gate
+(`scholar.py readiness` + the checklist bank). The claim-audit distortion
+taxonomy and temporal-lint concepts remain adapted from ARS (above).
+
+## Metadata-source acknowledgments
+
+Scholarly metadata: OpenAlex, Crossref, arXiv, Europe PMC, NCBI/PubMed, DBLP,
+OpenReview, Unpaywall, OpenCitations, DOAJ. Dataset metadata: Hugging Face Hub,
+OpenML, DataCite, Zenodo, UCI ML Repository, NCBI GEO/SRA, OpenNeuro. Retraction
+data: Retraction Watch / Crossref Labs. Reporting-standard checklists store a
+paraphrased `requirement_text` plus a `canonical_source_url` to the original
+(PRISMA 2020, CONSORT, STROBE, ARRIVE 2.0, NeurIPS checklist, Datasheets for
+Datasets, Model Cards) — cited and linked, not reproduced. Environment figure
+guidance skills (CC BY 4.0) are referenced with attribution.
+
 **NonCommercial notice:** CC BY-NC 4.0 restricts commercial use. If you need
 this tooling in a commercial setting, consult the license and the upstream
 author's terms.

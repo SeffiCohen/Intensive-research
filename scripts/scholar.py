@@ -17,6 +17,12 @@ Subcommands:
   audit-report  deterministic G3 gate over a report's citation markers
   doctor        environment preflight
   cache         stats | clear | path | load-retractions
+  venue-sample  fetch recent exemplar papers from a target venue (v2)
+  style-profile deterministic style profile from exemplars (v2)
+  originality   verbatim-overlap screen of a draft vs a corpus (v2)
+  datasets      search | card | splits | fitness | vet — dataset discovery (v2)
+  emit-prisma   PRISMA flow diagram (DOT/SVG) from counts (v2)
+  readiness     G4 submission-readiness gate over a manuscript (v2)
 """
 from __future__ import annotations
 
@@ -927,9 +933,18 @@ def cmd_doctor(args) -> int:
                        + (f"&mailto={urllib.parse.quote(http.mailto())}" if http.mailto() else ""),
                        ttl_class="search", fresh=True)
         check("network:openalex", r.ok, r.degraded_reason or f"http {r.status}")
+        rh = http.fetch(cache, "https://huggingface.co/api/datasets?limit=1",
+                        ttl_class="dataset", fresh=True)
+        check("network:huggingface", rh.ok, rh.degraded_reason or f"http {rh.status}")
         cache.close()
     except Exception as e:  # noqa: BLE001
         check("cache", False, str(e))
+    # Papers With Code is defunct (302-dead); assert so nobody re-adds it.
+    check("paperswithcode", True, "excluded (API defunct — SOTA via HF card paperswithcode_id)")
+    if getattr(args, "check_figures", False):
+        _check_figure_runtime(check)
+    if getattr(args, "check_standards", False):
+        _check_standards(check)
     hard_fail = any(not c["ok"] for c in checks if c["check"] in ("python", "cache", "network:openalex"))
     payload = {"ok": not hard_fail, "checks": checks}
     if args.json:
@@ -939,6 +954,47 @@ def cmd_doctor(args) -> int:
             print(f"[{'ok' if c['ok'] else '!!'}] {c['check']}: {c['detail']}")
         print("doctor:", "ok" if not hard_fail else "PROBLEMS FOUND")
     return 0 if not hard_fail else 1
+
+
+def _check_figure_runtime(check) -> None:
+    """Report which figure-rendering packages are available (all optional)."""
+    import importlib.util as _u
+    for pkg in ("matplotlib", "numpy", "PIL"):
+        present = _u.find_spec(pkg) is not None
+        check(f"figure:{pkg}", True,
+              "available" if present else f"MISSING — figures default to spec+code+caption; `pip install {pkg}` to render")
+    import shutil
+    check("figure:graphviz", True,
+          "dot available" if shutil.which("dot") else "dot MISSING — PRISMA/schematic render deferred (DOT text still emitted)")
+
+
+def _check_standards(check) -> None:
+    """HEAD-verify each checklist's canonical_source_url is reachable."""
+    import ssl as _ssl
+    base = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "skills",
+                        "intensive-research", "references", "checklists")
+    if not os.path.isdir(base):
+        check("standards:bank", False, "checklists dir missing")
+        return
+    urls = set()
+    for fn in os.listdir(base):
+        if fn.endswith(".json"):
+            for it in json.load(open(os.path.join(base, fn))).get("items", []):
+                if it.get("canonical_source_url"):
+                    urls.add(it["canonical_source_url"])
+    bad = []
+    for u in sorted(urls):
+        try:
+            req = urllib.request.Request(u, method="HEAD", headers={"User-Agent": http._user_agent()})
+            with urllib.request.urlopen(req, timeout=20, context=_ssl.create_default_context()) as resp:
+                if resp.status >= 400:
+                    bad.append(f"{u} ({resp.status})")
+        except urllib.error.HTTPError as e:
+            if e.code >= 400 and e.code not in (403, 405):  # some publishers block HEAD
+                bad.append(f"{u} ({e.code})")
+        except Exception:  # noqa: BLE001
+            pass  # network flake is not a standards failure
+    check("standards:urls", not bad, f"{len(urls)} checklist source URLs; broken: {bad or 'none'}")
 
 
 def _maybe_load_retractions(cache, quiet=False) -> None:
@@ -976,6 +1032,710 @@ def cmd_cache(args) -> int:
         return 0
     finally:
         cache.close()
+
+
+# ==========================================================================
+# v2 — venue style-learning
+# ==========================================================================
+
+def cmd_venue_sample(args) -> int:
+    cache = http.Cache()
+    manifest = {"venue": args.venue, "issn": args.issn, "resolved": None,
+                "executed_at": _now(), "exemplars": [], "degraded": []}
+    try:
+        works, source = [], None
+        # 1. Resolve venue via OpenAlex sources.
+        sources, err = apis.openalex_sources_search(cache, args.venue, source_type=args.type, fresh=args.fresh)
+        if err:
+            manifest["degraded"].append(f"openalex-sources: {err}")
+        if sources:
+            source = sources[0]
+            manifest["resolved"] = source
+            works, e = apis.openalex_works_by_source(
+                cache, source["id"], since=args.since, n=args.n, oa_only=args.oa_only, fresh=args.fresh)
+            if e:
+                manifest["degraded"].append(f"openalex-works: {e}")
+        # 2. Crossref-by-ISSN fallback.
+        if not works and (args.issn or (source and source.get("issn_l"))):
+            issn = args.issn or source.get("issn_l")
+            works, e = apis.crossref_journal_works(cache, issn, n=args.n, fresh=args.fresh)
+            if e:
+                manifest["degraded"].append(f"crossref-journal: {e}")
+        # 3. DBLP venue fallback (CS venues without ISSN).
+        if not works:
+            works, e = apis.dblp_venue_works(cache, args.venue, n=args.n, fresh=args.fresh)
+            if e:
+                manifest["degraded"].append(f"dblp-venue: {e}")
+        # For each exemplar, try to obtain structured full text (JATS) for style.
+        for w in works[:args.n]:
+            abstract = w.get("abstract")
+            doi = (w.get("ids") or {}).get("doi")
+            abstract_source = "openalex" if abstract else None
+            # Backfill abstract via Crossref when OpenAlex stripped it (common for
+            # closed Springer/Elsevier venues) so the style profile has real signal.
+            if not abstract and doi:
+                cr, _ = apis.crossref_lookup(cache, doi, fresh=args.fresh)
+                if cr and cr.get("abstract"):
+                    abstract, abstract_source = cr["abstract"], "crossref"
+            ex = {"id": w.get("id"), "title": w.get("title"), "year": w.get("year"),
+                  "doi": doi, "abstract": abstract, "abstract_source": abstract_source,
+                  "is_oa": w.get("is_oa"), "record_of": "preprint" if (w.get("venue") == "arXiv") else "version-of-record",
+                  "fulltext_path": None, "fulltext_source": None, "reference_count": None}
+            if args.save and doi:
+                jats = _try_jats(cache, w, args.save, args.fresh)
+                if jats:
+                    ex["fulltext_path"], ex["fulltext_source"] = jats, "europepmc-jats"
+            manifest["exemplars"].append(ex)
+        manifest["oa_fraction"] = round(
+            sum(1 for e in manifest["exemplars"] if e["is_oa"]) / max(1, len(manifest["exemplars"])), 2)
+        _write_json(args.out, manifest)
+        return 0 if manifest["exemplars"] else 1
+    finally:
+        cache.close()
+
+
+def _try_jats(cache, paper, save_dir, fresh):
+    """Best-effort EuropePMC JATS XML for one paper (structured text for style)."""
+    doi = (paper.get("ids") or {}).get("doi")
+    if not doi:
+        return None
+    papers, e = apis.europepmc_search(cache, f'DOI:"{normalize_doi(doi)}"', limit=1, fresh=fresh)
+    if e or not papers:
+        return None
+    ep = papers[0].get("epmc") or {}
+    if not (ep.get("source") and ep.get("id")):
+        return None
+    xml_text, e = apis.europepmc_fulltext_xml(cache, ep["source"], ep["id"], fresh=fresh)
+    if e or not xml_text:
+        return None
+    os.makedirs(save_dir, exist_ok=True)
+    dest = os.path.join(save_dir, f"{ep['id']}.xml")
+    with open(dest, "w", encoding="utf-8") as f:
+        f.write(xml_text)
+    return dest
+
+
+_SENT_SPLIT = re.compile(r"(?<=[.!?])\s+(?=[A-Z0-9])")
+_WORD = re.compile(r"[A-Za-z][A-Za-z'-]+")
+_HEDGES = frozenset("may might could suggest suggests suggested appear appears likely possibly "
+                    "perhaps potential potentially seem seems relatively somewhat arguably".split())
+_BOOSTERS = frozenset("clearly obviously certainly definitely undoubtedly evidently "
+                      "substantially markedly dramatically significantly strongly".split())
+_STOPWORDS = frozenset(
+    "the a an and or of to in for on with by is are was were be been being this that these those "
+    "we our it its as at from we results method methods using used based our their which have has "
+    "not can will more most than then also into such between both each other more paper study".split())
+
+
+def _sentences(text):
+    return [s for s in _SENT_SPLIT.split(text or "") if s.strip()]
+
+
+def _jats_sections(xml_text):
+    """Return [(title, text)] top-level sections from a JATS body."""
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError:
+        return []
+    body = root.find(".//{*}body") or root.find(".//body")
+    if body is None:
+        return []
+    out = []
+    for sec in body.findall("{*}sec") or body.findall("sec"):
+        title_el = sec.find("{*}title") or sec.find("title")
+        title = "".join(title_el.itertext()).strip() if title_el is not None else ""
+        text = " ".join(" ".join(sec.itertext()).split())
+        out.append((title, text))
+    return out
+
+
+def cmd_style_profile(args) -> int:
+    manifest = json.load(open(args.manifest, encoding="utf-8"))
+    exemplars = manifest.get("exemplars", [])
+    texts, sec_titles, all_sentences, ref_counts = [], [], [], []
+    fulltext_used = 0
+    for ex in exemplars:
+        txt = ex.get("abstract") or ""
+        if ex.get("fulltext_path") and os.path.exists(ex["fulltext_path"]):
+            xml = open(ex["fulltext_path"], encoding="utf-8").read()
+            secs = _jats_sections(xml)
+            if secs:
+                fulltext_used += 1
+                sec_titles.append([t.lower() for t, _ in secs if t])
+                txt = " ".join(t for _, t in secs)
+        texts.append(txt)
+        all_sentences.extend(_sentences(txt))
+        if ex.get("reference_count"):
+            ref_counts.append(ex["reference_count"])
+
+    sent_lens = [len(_WORD.findall(s)) for s in all_sentences if s.strip()]
+    words = [w.lower() for t in texts for w in _WORD.findall(t)]
+    n_words = max(1, len(words))
+    hedge_n = sum(1 for w in words if w in _HEDGES)
+    boost_n = sum(1 for w in words if w in _BOOSTERS)
+    # Terminology: content unigrams present in >=2 exemplars (generic-vocab guard).
+    from collections import Counter
+    per_ex_terms = []
+    for t in texts:
+        per_ex_terms.append(set(w.lower() for w in _WORD.findall(t)
+                                if w.lower() not in _STOPWORDS and len(w) > 3))
+    term_doc_freq = Counter()
+    for s in per_ex_terms:
+        term_doc_freq.update(s)
+    shared_terms = [t for t, c in term_doc_freq.most_common(60) if c >= 2][:25]
+
+    n_full = fulltext_used
+    confidence = "high" if n_full >= 5 else ("med" if n_full >= 3 else "low")
+    # Common section sequence (from full-text exemplars only).
+    common_sections = []
+    if sec_titles:
+        seq_counter = Counter()
+        for seq in sec_titles:
+            seq_counter.update(seq)
+        common_sections = [s for s, c in seq_counter.most_common(12)]
+
+    profile = {
+        "venue": {"name": manifest.get("venue"),
+                  "openalex_source_id": (manifest.get("resolved") or {}).get("id"),
+                  "issn_l": (manifest.get("resolved") or {}).get("issn_l"),
+                  "type": (manifest.get("resolved") or {}).get("type"),
+                  "publisher": (manifest.get("resolved") or {}).get("publisher")},
+        "sample": {"n": len(exemplars), "n_fulltext": n_full,
+                   "oa_fraction": manifest.get("oa_fraction"),
+                   "confidence": confidence,
+                   "coverage_note": f"{n_full}/{len(exemplars)} exemplars had structured full text; "
+                                    "remaining features derived from abstracts + metadata"},
+        "structure": {"common_section_titles": common_sections,
+                      "structure_confidence": "jats" if sec_titles else "heuristic"},
+        "sentences": {"mean_len_words": round(sum(sent_lens) / max(1, len(sent_lens)), 1) if sent_lens else None,
+                      "n_sentences": len(sent_lens),
+                      "provenance": "fulltext" if n_full else "abstract-only"},
+        "voice_hedging": {"hedges_per_1000": round(1000 * hedge_n / n_words, 2),
+                          "boosters_per_1000": round(1000 * boost_n / n_words, 2),
+                          "note": "DESCRIPTIVE/ADVISORY ONLY — never a writer optimization target"},
+        "terminology": {"shared_domain_terms": shared_terms,
+                        "note": "unigrams in >=2 exemplars, stoplisted; generic vocabulary only"},
+        "reference_style": {"median_ref_count": (sorted(ref_counts)[len(ref_counts) // 2]
+                                                 if ref_counts else None)},
+        "provenance": {"generated_at": _now(),
+                       "exemplar_ids": [e.get("id") for e in exemplars],
+                       "exemplar_dois": [e.get("doi") for e in exemplars],
+                       "record_of": [e.get("record_of") for e in exemplars],
+                       "guardrail": "structure + statistics only; contains no exemplar sentences"},
+    }
+    # Guardrail assertion: no long free-text strings leaked from source.
+    leaked = _profile_has_long_strings(profile)
+    profile["provenance"]["leak_check"] = "clean" if not leaked else f"WARNING: {leaked}"
+    _write_json(args.out, profile)
+    return 0 if confidence != "low" else 3  # advisory low-confidence signal
+
+
+def _profile_has_long_strings(obj, limit_words=6):
+    """Assert no field carries a >limit_words free-text run (plagiarism guard)."""
+    def walk(o):
+        if isinstance(o, str):
+            if len(o.split()) > limit_words and " " in o and not o.startswith("http"):
+                # Allow the known descriptive notes.
+                if "ONLY" in o or "derived from" in o or "contains no" in o or "stoplisted" in o:
+                    return None
+                return o[:60]
+        elif isinstance(o, dict):
+            for k, v in o.items():
+                if k in ("note", "coverage_note", "guardrail", "leak_check"):
+                    continue
+                hit = walk(v)
+                if hit:
+                    return hit
+        elif isinstance(o, list):
+            for v in o:
+                hit = walk(v)
+                if hit:
+                    return hit
+        return None
+    return walk(obj)
+
+
+def _tokens(text):
+    return [w.lower() for w in _WORD.findall(text or "")]
+
+
+def cmd_originality(args) -> int:
+    draft = open(args.draft, encoding="utf-8").read()
+    # Strip fenced quotes so legitimately quoted material is not flagged.
+    draft_unquoted = re.sub(r'"[^"]*"', " ", draft)
+    draft_unquoted = re.sub(r"^>.*$", " ", draft_unquoted, flags=re.M)
+    draft_toks = _tokens(draft_unquoted)
+    k = args.max_verbatim_words + 1
+
+    sources_text, n_avail, n_total = [], 0, 0
+    targets = []
+    if os.path.isdir(args.against):
+        targets = [os.path.join(args.against, f) for f in os.listdir(args.against)]
+    elif args.against.endswith(".json"):
+        man = json.load(open(args.against, encoding="utf-8"))
+        for ex in man.get("exemplars", man.get("papers", [])):
+            n_total += 1
+            if ex.get("fulltext_path") and os.path.exists(ex["fulltext_path"]):
+                sources_text.append(open(ex["fulltext_path"], encoding="utf-8").read())
+                n_avail += 1
+            elif ex.get("abstract"):
+                sources_text.append(ex["abstract"])
+                n_avail += 1
+    for t in targets:
+        if os.path.isfile(t):
+            try:
+                sources_text.append(open(t, encoding="utf-8").read())
+                n_avail += 1
+                n_total += 1
+            except (OSError, UnicodeDecodeError):
+                pass
+
+    source_kgrams = set()
+    for st in sources_text:
+        toks = _tokens(st)
+        for i in range(len(toks) - k + 1):
+            source_kgrams.add(" ".join(toks[i:i + k]))
+
+    flagged = []
+    i = 0
+    while i <= len(draft_toks) - k:
+        gram = " ".join(draft_toks[i:i + k])
+        if gram in source_kgrams:
+            flagged.append(gram)
+            i += k
+        else:
+            i += 1
+
+    report = {
+        "draft": args.draft, "against": args.against,
+        "executed_at": _now(),
+        "screen_type": "OA-corpus verbatim screen (NOT plagiarism clearance)",
+        "coverage": {"n_sources_with_text": n_avail, "n_sources_total": n_total},
+        "max_verbatim_words": args.max_verbatim_words,
+        "flagged_spans": flagged[:50],
+        "n_flagged": len(flagged),
+        "gate": "fail" if flagged else "pass",
+    }
+    _write_json(args.out, report)
+    return 1 if flagged else 0
+
+
+# ==========================================================================
+# v2 — dataset discovery + fitness (G-D)
+# ==========================================================================
+
+_PII_LEXICON = re.compile(
+    r"\b(name|email|e-mail|dob|date.of.birth|ssn|social.security|address|phone|"
+    r"patient|mrn|diagnosis|demographic|race|ethnicity|gender|geolocation|gps|ip.address)\b",
+    re.IGNORECASE)
+_ETHICS_KEYWORDS = re.compile(
+    r"\b(consent|irb|ethics|institutional review|gdpr|hipaa|de-?identif|anonymiz|"
+    r"data use agreement|dua)\b", re.IGNORECASE)
+_SENSITIVE_MODALITIES = {"face", "facial", "medical", "clinical", "biometric",
+                         "speech", "audio-speaker", "location-trace", "genomic", "mri", "eeg"}
+
+
+def _dataset_pii_signal(rec):
+    """Detect human-subjects/PII exposure from dataset CONTENT (amendment 5).
+    Returns (triggered: bool, reasons: [str])."""
+    reasons = []
+    mods = {str(m).lower() for m in (rec.get("modalities") or [])}
+    dom = (rec.get("domain") or "").lower()
+    if mods & _SENSITIVE_MODALITIES or dom in ("biomedical", "clinical", "medical"):
+        reasons.append(f"sensitive modality/domain: {sorted(mods & _SENSITIVE_MODALITIES) or dom}")
+    feat_blob = " ".join(str(x) for x in (rec.get("features") or []))
+    if _PII_LEXICON.search(feat_blob):
+        reasons.append("PII-like feature names")
+    card_blob = " ".join(str(rec.get(k) or "") for k in ("title", "description"))
+    if _PII_LEXICON.search(card_blob):
+        reasons.append("PII terms in card text")
+    return (bool(reasons), reasons)
+
+
+def _dataset_ethics_present(rec):
+    blob = " ".join(str(rec.get(k) or "") for k in ("description",)) + " " + \
+        json.dumps(rec.get("datasheet") or {})
+    return bool(_ETHICS_KEYWORDS.search(blob)) or bool((rec.get("datasheet") or {}).get("has_ethics_statement"))
+
+
+def _dataset_fitness_one(rec, spec):
+    """Deterministic, explainable fitness. Gates 1/4/7 veto; others weighted."""
+    crit = []
+    gates_triggered = []
+
+    def add(cid, name, score, evidence, gate=False, veto=False):
+        crit.append({"id": cid, "name": name, "score": score, "evidence": evidence,
+                     "gate": gate, "veto": veto})
+        if gate and veto:
+            gates_triggered.append(name)
+
+    # Gate 1 — task/modality match.
+    want_mod = {str(m).lower() for m in (spec.get("modality") and [spec["modality"]] or [])}
+    have_mod = {str(m).lower() for m in (rec.get("modalities") or [])}
+    have_task = {str(t).lower() for t in (rec.get("task_categories") or [])}
+    want_task = (spec.get("task") or "").lower()
+    mod_ok = (not want_mod) or (want_mod & have_mod) or not have_mod
+    task_ok = (not want_task) or any(want_task in t for t in have_task) or not have_task
+    veto1 = bool(want_mod and have_mod and not (want_mod & have_mod))
+    add(1, "task_modality_match", 0 if veto1 else 100,
+        f"want mod={want_mod or 'any'} task={want_task or 'any'}; have mod={have_mod} task={sorted(have_task)[:3]}",
+        gate=True, veto=veto1)
+
+    # 2 — size adequacy.
+    n = (rec.get("size") or {}).get("num_instances")
+    min_size = spec.get("min_size")
+    if n is None:
+        add(2, "size_adequacy", 50, "size unknown (null)")
+    elif min_size and n < min_size:
+        add(2, "size_adequacy", 25, f"{n} < required {min_size}")
+    else:
+        add(2, "size_adequacy", 100, f"{n} instances")
+
+    # 3 — splits.
+    splits = rec.get("splits") or []
+    add(3, "splits", 100 if splits else 40,
+        f"{[s.get('name') for s in splits]}" if splits else "no split metadata")
+
+    # Gate 4 — license vs usage (unknown -> conditional, not veto).
+    lic = rec.get("license") or {}
+    usage = spec.get("usage") or {}
+    nc = lic.get("noncommercial")
+    nd = lic.get("noderivatives")
+    veto4 = False
+    if lic.get("is_open") is None and not lic.get("spdx_id") and not lic.get("name"):
+        add(4, "license_usage_rights", 50, "license unknown/absent -> conditional (review needed)", gate=True)
+    elif nc and usage.get("commercial"):
+        veto4 = True
+        add(4, "license_usage_rights", 0, "NonCommercial license vs commercial usage", gate=True, veto=True)
+    elif nd and usage.get("derivatives"):
+        veto4 = True
+        add(4, "license_usage_rights", 0, "NoDerivatives license vs derivative usage", gate=True, veto=True)
+    else:
+        add(4, "license_usage_rights", 100, f"license={lic.get('spdx_id') or lic.get('name')} open={lic.get('is_open')}", gate=True)
+
+    # 5 — provenance / citations.
+    cites = (rec.get("citations") or {}).get("count")
+    add(5, "provenance_citations", 100 if cites else 60,
+        f"citations={cites}; creators={len(rec.get('creators') or [])}")
+
+    # 6 — leakage/contamination (signal-and-flag; absent -> unverified).
+    integ = rec.get("integrity") or {}
+    if integ.get("known_leakage_flag") or integ.get("known_contamination_flag"):
+        add(6, "leakage_contamination", 0, "known leakage/contamination flag")
+    else:
+        add(6, "leakage_contamination", 70, "no known-issue flag (unverified, not certified clean)")
+
+    # Gate 7 — ethics / PII (keys off dataset CONTENT).
+    pii, reasons = _dataset_pii_signal(rec)
+    ethics_present = _dataset_ethics_present(rec)
+    if pii and not ethics_present:
+        add(7, "ethics_consent_pii", 0,
+            f"human-subjects/PII signal ({'; '.join(reasons)}) with NO ethics/consent statement",
+            gate=True, veto=True)
+    elif pii and ethics_present:
+        add(7, "ethics_consent_pii", 60,
+            f"human-subjects/PII signal ({'; '.join(reasons)}); ethics statement present but UNVERIFIED", gate=True)
+    else:
+        add(7, "ethics_consent_pii", 100, "no human-subjects/PII signal detected", gate=True)
+
+    # 8 — format/accessibility.
+    right = (rec.get("access") or {}).get("right")
+    add(8, "format_accessibility", 100 if right == "open" else (50 if right in ("gated", None) else 20),
+        f"access={right}; formats={rec.get('formats')}")
+
+    # 9 — datasheet availability.
+    ds = rec.get("datasheet") or {}
+    add(9, "datasheet_availability", 100 if (ds.get("croissant") or ds.get("datasheet_url")) else 40,
+        "datasheet/croissant present" if (ds.get("croissant") or ds.get("datasheet_url")) else "no datasheet")
+
+    weights = {2: 20, 3: 15, 5: 15, 6: 15, 8: 15, 9: 20}
+    wsum = sum(weights.values())
+    agg = round(sum(c["score"] * weights[c["id"]] for c in crit if c["id"] in weights) / wsum, 1)
+
+    any_veto = bool(gates_triggered)
+    license_unknown = any(c["id"] == 4 and c["score"] == 50 for c in crit)
+    ethics_unverified = any(c["id"] == 7 and c["score"] == 60 for c in crit)
+    if any_veto:
+        verdict = "unfit"
+    elif license_unknown or ethics_unverified:
+        verdict = "conditional"
+    else:
+        verdict = "fit"
+
+    return {"record_id": rec.get("record_id"), "title": rec.get("title"),
+            "verdict": verdict, "aggregate_score": agg,
+            "criteria": crit, "gates_triggered": gates_triggered,
+            "review_flags": ([f"license unknown ({rec.get('source')} metadata sparse)"] if license_unknown else [])
+                            + (["ethics statement present but unverified"] if ethics_unverified else [])}
+
+
+def cmd_datasets(args) -> int:
+    cache = http.Cache()
+    try:
+        if args.verb == "search":
+            sources = [s.strip() for s in (args.sources or ",".join(apis.DEFAULT_DATASET_SOURCES)).split(",") if s.strip()]
+            if "all" in sources:
+                sources = list(apis.DATASET_SOURCES)
+            unknown = [s for s in sources if s not in apis.DATASET_ADAPTERS]
+            if unknown:
+                http.eprint(f"unknown dataset sources: {unknown}; valid: {sorted(apis.DATASET_ADAPTERS)}")
+                return 2
+            per_source, all_recs = {}, []
+            import concurrent.futures as _cf
+
+            def run(source):
+                c = http.Cache()
+                try:
+                    recs, err = apis.DATASET_ADAPTERS[source](c, args.q, limit=args.limit, fresh=args.fresh)
+                    return source, recs, err
+                finally:
+                    c.close()
+            with _cf.ThreadPoolExecutor(max_workers=min(len(sources), 6)) as ex:
+                for source, recs, err in ex.map(run, sources):
+                    per_source[source] = {"count": len(recs), "status": "degraded" if err else "ok",
+                                          **({"error": err} if err else {})}
+                    all_recs.extend(recs)
+            collapsed = apis.collapse_dataset_mirrors(all_recs)
+            _write_json(args.out, {"query": args.q, "executed_at": _now(),
+                                   "per_source": per_source,
+                                   "collapse": {"input": len(all_recs), "unique": len(collapsed)},
+                                   "datasets": collapsed})
+            return 0
+        if args.verb == "card":
+            source, _, native = args.target.partition(":")
+            if source == "hf":
+                card, err = apis.hf_dataset_card(cache, native, fresh=args.fresh)
+                _write_json(args.out, {"card": card, "degraded": err})
+                return 0 if card else 1
+            http.eprint(f"card fetch not implemented for source {source}")
+            return 2
+        if args.verb == "splits":
+            splits, err = apis.hf_dataset_splits(cache, args.target, fresh=args.fresh)
+            _write_json(args.out, {"splits": splits, "degraded": err})
+            return 0 if splits else 1
+        if args.verb in ("fitness", "vet"):
+            recs = _iter_dataset_records(args.candidates) if args.verb == "fitness" else None
+            spec = json.load(open(args.spec, encoding="utf-8")) if args.spec else {}
+            if args.verb == "vet":
+                source, _, native = args.target.partition(":")
+                one, err = (apis.hf_dataset_card(cache, native, fresh=args.fresh) if source == "hf" else (None, None))
+                http.eprint("vet: use fitness with a candidates file for full scoring")
+                return 0
+            results = [_dataset_fitness_one(r, spec) for r in recs]
+            counts = {}
+            for r in results:
+                counts[r["verdict"]] = counts.get(r["verdict"], 0) + 1
+            _write_json(args.out, {"executed_at": _now(), "spec": spec, "counts": counts, "results": results})
+            if args.gate:
+                # G-D: fit passes; conditional needs sign-off; unfit blocks.
+                if any(r["verdict"] == "unfit" for r in results):
+                    return 1
+                if any(r["verdict"] == "conditional" for r in results) and not args.signoff:
+                    http.eprint("G-D: conditional datasets require --signoff (recorded human sign-off)")
+                    return 1
+            return 0
+        return 2
+    finally:
+        cache.close()
+
+
+def _iter_dataset_records(path):
+    data = json.load(open(path, encoding="utf-8"))
+    if isinstance(data, dict) and "datasets" in data:
+        return data["datasets"]
+    if isinstance(data, list):
+        return data
+    raise ValueError("expected a datasets envelope or a list")
+
+
+# ==========================================================================
+# v2 — PRISMA-as-figure (deterministic DOT/SVG)
+# ==========================================================================
+
+def cmd_emit_prisma(args) -> int:
+    counts = json.load(open(args.counts, encoding="utf-8")) if args.counts else {}
+    identified = counts.get("identified", {})
+    total_id = sum(identified.values()) if isinstance(identified, dict) else (identified or 0)
+    dups = counts.get("duplicates_removed", 0)
+    screened = counts.get("screened", total_id - dups)
+    excluded_screen = counts.get("excluded_screening", {})
+    n_excl_screen = sum(excluded_screen.values()) if isinstance(excluded_screen, dict) else (excluded_screen or 0)
+    eligible = counts.get("eligible", screened - n_excl_screen)
+    excluded_ft = counts.get("excluded_fulltext", {})
+    n_excl_ft = sum(excluded_ft.values()) if isinstance(excluded_ft, dict) else (excluded_ft or 0)
+    included = counts.get("included", eligible - n_excl_ft)
+
+    def esc(s):
+        return str(s).replace('"', '\\"')
+
+    if args.format == "dot":
+        lines = ["digraph PRISMA {", '  rankdir=TB; node [shape=box, fontname="Helvetica"];',
+                 f'  id [label="Records identified (n={total_id})"];',
+                 f'  dup [label="Duplicates removed (n={dups})"];',
+                 f'  scr [label="Records screened (n={screened})"];',
+                 f'  exs [label="Excluded at screening (n={n_excl_screen})", shape=box, style=dashed];',
+                 f'  elig [label="Assessed for eligibility (n={eligible})"];',
+                 f'  exf [label="Excluded at full text (n={n_excl_ft})", shape=box, style=dashed];',
+                 f'  inc [label="Studies included (n={included})", style=bold];',
+                 "  id -> dup -> scr -> elig -> inc;",
+                 "  scr -> exs; elig -> exf;", "}"]
+        text = "\n".join(lines)
+    else:  # svg — hand-rolled stdlib
+        rows = [("Records identified", total_id), ("Duplicates removed", dups),
+                ("Records screened", screened), ("Excluded at screening", n_excl_screen),
+                ("Assessed for eligibility", eligible), ("Excluded at full text", n_excl_ft),
+                ("Studies included", included)]
+        h = 60 * len(rows) + 20
+        parts = [f'<svg xmlns="http://www.w3.org/2000/svg" width="360" height="{h}" font-family="Helvetica">']
+        for i, (label, n) in enumerate(rows):
+            y = 20 + i * 60
+            parts.append(f'<rect x="20" y="{y}" width="320" height="40" fill="#eef" stroke="#334"/>'
+                         f'<text x="30" y="{y + 25}" font-size="13">{esc(label)}: n={n}</text>')
+            if i < len(rows) - 1:
+                parts.append(f'<line x1="180" y1="{y + 40}" x2="180" y2="{y + 60}" stroke="#334"/>')
+        parts.append("</svg>")
+        text = "\n".join(parts)
+
+    if args.out:
+        with open(args.out, "w", encoding="utf-8") as f:
+            f.write(text + "\n")
+        print(f"wrote {args.out} ({args.format})")
+    else:
+        print(text)
+    return 0
+
+
+# ==========================================================================
+# v2 — submission-readiness gate (G4)
+# ==========================================================================
+
+_PVALUE = re.compile(r"\bp\s*[<>=]\s*0?\.\d+|\bp\s*=\s*\.?\d", re.IGNORECASE)
+_CI = re.compile(r"(95%\s*ci|confidence interval|\bci\b|±|\[[-\d.]+,\s*[-\d.]+\])", re.IGNORECASE)
+_EFFECT = re.compile(r"\b(cohen's d|odds ratio|\bor\b|risk ratio|\brr\b|hazard ratio|\bhr\b|"
+                     r"effect size|mean difference|correlation|r\s*=|β\s*=|beta\s*=)\b", re.IGNORECASE)
+_PAST_RESULT = re.compile(
+    r"\b(we (found|observed|showed|demonstrated|achieved|obtained|report)|"
+    r"results (show|showed|demonstrate|indicate)|our (experiments?|model) (achieved|obtained|outperform))",
+    re.IGNORECASE)
+_RESULTS_HEADING = re.compile(r"^#{1,3}\s*(results|findings|experiments?)\b", re.IGNORECASE | re.M)
+
+
+def _structural_check(check_id, text):
+    checks = {
+        "has_data_availability": r"data availability|data are available|data can be found|available at (https?://|doi)",
+        "has_code_availability": r"code (is )?available|source code|github\.com|zenodo",
+        "has_funding": r"funding|funded by|grant (no|number)|financial support",
+        "has_coi": r"conflict of interest|competing interests|no conflicts|declare no",
+        "has_ethics": r"ethics|irb|institutional review|informed consent|approved by",
+        "has_limitations": r"^#{1,4}.*limitation|limitations of|a limitation",
+        "has_methods": r"^#{1,4}\s*(methods|materials and methods|methodology)",
+        "has_abstract": r"^#{1,4}\s*abstract|^\*\*abstract",
+        "has_references": r"^#{1,4}\s*(references|bibliography)",
+    }
+    pat = checks.get(check_id)
+    if not pat:
+        return None
+    return bool(re.search(pat, text, re.IGNORECASE | re.M))
+
+
+def cmd_readiness(args) -> int:
+    text = open(args.manuscript, encoding="utf-8").read()
+    checklists = _load_checklists(args.checklists_dir, args.checklist_set)
+    items_report, must_fail = [], []
+    for item in checklists:
+        auto = item.get("auto_detectable")
+        present = None
+        if auto == "regex" and item.get("pattern"):
+            present = bool(re.search(item["pattern"], text, re.IGNORECASE | re.M))
+        elif auto == "structural" and item.get("check"):
+            present = _structural_check(item["check"], text)
+        status = "present" if present else ("missing" if present is False else "adequacy-deferred")
+        # llm-judge items: reconcile against reviewer .done shards if provided.
+        adequacy = None
+        if auto == "llm-judge" and args.adequacy_shards:
+            shard = os.path.join(args.adequacy_shards, f"{item['id']}.done")
+            if os.path.exists(shard):
+                adequacy = open(shard, encoding="utf-8").read().strip().lower()
+                status = "adequate" if adequacy.startswith("adequate") else "inadequate"
+        rec = {"id": item["id"], "section": item.get("section"), "severity": item.get("severity"),
+               "auto_detectable": auto, "status": status,
+               "requirement": item.get("requirement_text"), "source": item.get("canonical_source_url")}
+        items_report.append(rec)
+        if item.get("severity") == "must":
+            if auto in ("regex", "structural") and present is False:
+                must_fail.append(item["id"])
+            elif auto == "llm-judge" and args.adequacy_shards and status == "inadequate":
+                must_fail.append(item["id"])
+
+    # Statistical completeness: orphan p-values (p-value with no nearby CI/effect).
+    orphan_p = []
+    for m in _PVALUE.finditer(text):
+        window = text[max(0, m.start() - 200): m.end() + 200]
+        if not (_CI.search(window) or _EFFECT.search(window)):
+            orphan_p.append(text[max(0, m.start() - 30): m.end() + 10].strip())
+
+    # Reproducibility TOP-style classification.
+    repro = {"data_availability": bool(_structural_check("has_data_availability", text)),
+             "code_availability": bool(_structural_check("has_code_availability", text))}
+
+    # run_mode = proposal: no populated Results section, no past-tense result claims.
+    proposal_violations = []
+    if args.run_mode == "proposal":
+        if _RESULTS_HEADING.search(text):
+            proposal_violations.append("populated Results/Findings section present in proposal mode")
+        for m in _PAST_RESULT.finditer(text):
+            proposal_violations.append("past-tense results claim: " + text[m.start():m.start() + 60].strip())
+
+    # Figure-manifest sync.
+    figure_fail = []
+    if args.figure_manifest and os.path.exists(args.figure_manifest):
+        manifest = json.load(open(args.figure_manifest, encoding="utf-8"))
+        by_id = {f["id"]: f for f in (manifest if isinstance(manifest, list) else manifest.get("figures", []))}
+        for m in re.finditer(r"!\[[^\]]*\]\(figures/([^)\s]+)", text):
+            fid = m.group(1).split(".")[0].split("/")[-1]
+            f = by_id.get(fid)
+            if not f:
+                figure_fail.append(f"embedded figure {fid} not in manifest")
+            elif f.get("render_status") in ("deferred", "needs_human") or f.get("critic_verdict") == "revise":
+                figure_fail.append(f"figure {fid} embedded but render_status={f.get('render_status')} critic={f.get('critic_verdict')}")
+
+    gate_fail = bool(must_fail or orphan_p or proposal_violations or figure_fail)
+    report = {
+        "manuscript": args.manuscript, "checklist_set": args.checklist_set, "run_mode": args.run_mode,
+        "executed_at": _now(),
+        "summary": {"items_total": len(items_report),
+                    "must_missing": len(must_fail),
+                    "orphan_p_values": len(orphan_p),
+                    "proposal_violations": len(proposal_violations),
+                    "figure_failures": len(figure_fail),
+                    "reproducibility": repro},
+        "must_fail_items": must_fail,
+        "orphan_p_values": orphan_p[:20],
+        "proposal_violations": proposal_violations[:20],
+        "figure_failures": figure_fail[:20],
+        "items": items_report,
+        "gate": "fail" if gate_fail else "pass",
+        "note": "Exit code covers regex/structural/deterministic checks; llm-judge adequacy is "
+                "reconciled via reviewer .done shards (pass --adequacy-shards).",
+    }
+    _write_json(args.out, report)
+    return 1 if gate_fail else 0
+
+
+def _load_checklists(checklists_dir, checklist_set):
+    base = checklists_dir or os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "..", "skills",
+        "intensive-research", "references", "checklists")
+    items = []
+    sets = checklist_set.split(",")
+    for name in sets:
+        path = os.path.join(base, f"{name.strip()}.json")
+        if os.path.exists(path):
+            data = json.load(open(path, encoding="utf-8"))
+            for it in data.get("items", []):
+                it.setdefault("checklist", name.strip())
+                items.append(it)
+    return items
 
 
 # --------------------------------------------------------------------------
@@ -1065,11 +1825,83 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("doctor", help="environment preflight")
     p.add_argument("--json", action="store_true")
+    p.add_argument("--check-figures", action="store_true", help="report figure-rendering runtime")
+    p.add_argument("--check-standards", action="store_true", help="HEAD-verify checklist source URLs")
     p.set_defaults(fn=cmd_doctor)
 
     p = sub.add_parser("cache", help="cache maintenance")
     p.add_argument("action", choices=["stats", "clear", "path", "load-retractions"])
     p.set_defaults(fn=cmd_cache)
+
+    # --- v2: venue style-learning ---
+    p = sub.add_parser("venue-sample", help="fetch recent exemplar papers from a venue")
+    p.add_argument("--venue", required=True)
+    p.add_argument("--issn")
+    p.add_argument("--n", type=int, default=5)
+    p.add_argument("--since", default="2023-01-01")
+    p.add_argument("--type", choices=["journal", "conference", "repository"])
+    p.add_argument("--oa-only", action="store_true")
+    p.add_argument("--save", help="dir to save exemplar JATS full text into")
+    common(p)
+    p.set_defaults(fn=cmd_venue_sample)
+
+    p = sub.add_parser("style-profile", help="compute a deterministic style profile from exemplars")
+    p.add_argument("--manifest", required=True)
+    common(p)
+    p.set_defaults(fn=cmd_style_profile)
+
+    p = sub.add_parser("originality", help="verbatim-overlap screen of a draft vs a corpus")
+    p.add_argument("--draft", required=True)
+    p.add_argument("--against", required=True, help="exemplar manifest JSON or a directory of text files")
+    p.add_argument("--max-verbatim-words", type=int, default=12)
+    common(p)
+    p.set_defaults(fn=cmd_originality)
+
+    # --- v2: datasets (nested verbs) ---
+    p = sub.add_parser("datasets", help="dataset discovery + vetting")
+    dsub = p.add_subparsers(dest="verb", required=True)
+    d = dsub.add_parser("search")
+    d.add_argument("--q", required=True)
+    d.add_argument("--sources", help="comma list or 'all' (default hf,openml,datacite,zenodo,uci)")
+    d.add_argument("--limit", type=int, default=25)
+    common(d)
+    d = dsub.add_parser("card")
+    d.add_argument("target", help="<source>:<id>, e.g. hf:stanfordnlp/imdb")
+    common(d)
+    d = dsub.add_parser("splits")
+    d.add_argument("target", help="HF dataset id")
+    common(d)
+    d = dsub.add_parser("fitness")
+    d.add_argument("--candidates", required=True)
+    d.add_argument("--spec", required=True)
+    d.add_argument("--gate", action="store_true", help="G-D: exit nonzero on unfit/unsigned-conditional")
+    d.add_argument("--signoff", action="store_true", help="recorded human sign-off for conditional datasets")
+    common(d)
+    d = dsub.add_parser("vet")
+    d.add_argument("target")
+    d.add_argument("--spec")
+    common(d)
+    p.set_defaults(fn=cmd_datasets)
+
+    # --- v2: PRISMA figure ---
+    p = sub.add_parser("emit-prisma", help="emit a PRISMA flow diagram (DOT/SVG) from counts")
+    p.add_argument("--counts", required=True, help="prisma-counts.json")
+    p.add_argument("--ledger", help="search-ledger.jsonl (optional, for identification totals)")
+    p.add_argument("--format", choices=["dot", "svg"], default="dot")
+    p.add_argument("--out")
+    p.set_defaults(fn=cmd_emit_prisma)
+
+    # --- v2: submission-readiness gate (G4) ---
+    p = sub.add_parser("readiness", help="G4: submission-readiness gate over a manuscript")
+    p.add_argument("--manuscript", required=True)
+    p.add_argument("--checklist-set", required=True, help="comma list of checklist ids (e.g. prisma-2020,strobe)")
+    p.add_argument("--checklists-dir")
+    p.add_argument("--run-mode", choices=["proposal", "empirical"], default="empirical")
+    p.add_argument("--figure-manifest")
+    p.add_argument("--adequacy-shards", help="dir of reviewer <item>.done adequacy verdicts")
+    p.add_argument("--corpus")
+    common(p)
+    p.set_defaults(fn=cmd_readiness)
 
     return ap
 

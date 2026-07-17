@@ -1,0 +1,13 @@
+{
+  "checklist": "model-card",
+  "title": "Model Cards — trained-model documentation",
+  "version": "2019",
+  "items": [
+    {"id": "mc-details", "section": "Model details", "requirement_text": "Describe the model architecture, version, and training procedure.", "canonical_source_url": "https://doi.org/10.1145/3287560.3287596", "severity": "must", "auto_detectable": "regex", "pattern": "architecture|parameters|layers|trained|fine-tun|pretrain"},
+    {"id": "mc-intended-use", "section": "Intended use", "requirement_text": "State intended uses and out-of-scope / misuse cases.", "canonical_source_url": "https://doi.org/10.1145/3287560.3287596", "severity": "must", "auto_detectable": "regex", "pattern": "intended use|out-of-scope|misuse|not (intended|designed) for|use case"},
+    {"id": "mc-eval-data", "section": "Evaluation", "requirement_text": "Describe the evaluation datasets and metrics.", "canonical_source_url": "https://doi.org/10.1145/3287560.3287596", "severity": "must", "auto_detectable": "regex", "pattern": "evaluat(ed|ion)|benchmark|test set|metric|accuracy|f1|auc"},
+    {"id": "mc-disaggregated", "section": "Evaluation", "requirement_text": "Report disaggregated performance across relevant subgroups where applicable.", "canonical_source_url": "https://doi.org/10.1145/3287560.3287596", "severity": "should", "auto_detectable": "llm-judge", "reviewer": "ir-methodology-reviewer"},
+    {"id": "mc-ethical", "section": "Ethical considerations", "requirement_text": "Discuss ethical considerations, risks, and mitigations.", "canonical_source_url": "https://doi.org/10.1145/3287560.3287596", "severity": "must", "auto_detectable": "regex", "pattern": "ethical|risk|mitigation|fairness|harm|bias"},
+    {"id": "mc-limitations", "section": "Caveats", "requirement_text": "State caveats and limitations of the model.", "canonical_source_url": "https://doi.org/10.1145/3287560.3287596", "severity": "must", "auto_detectable": "structural", "check": "has_limitations"}
+  ]
+}

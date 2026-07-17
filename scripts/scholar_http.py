@@ -50,6 +50,15 @@ RATE_TABLE = {
     "doaj.org": (1.0, 1.0),
     "api.labs.crossref.org": (1.0, 1.0),
     "api.biorxiv.org": (1.0, 1.0),
+    # Dataset-discovery hosts (v2). Intervals set to VERIFIED limits; hosts with
+    # no polite pool get with_cred == anon so IR_MAILTO never buys a faster rate.
+    "huggingface.co": (0.7, 0.7),                 # 500 req / 300 s window -> ~1.67/s
+    "datasets-server.huggingface.co": (0.7, 0.7),
+    "www.openml.org": (1.0, 1.0),
+    "api.datacite.org": (1.0, 1.0),
+    "zenodo.org": (2.0, 2.0),                     # 30 req / min -> 1 per 2 s
+    "archive.ics.uci.edu": (1.0, 1.0),
+    "openneuro.org": (1.0, 1.0),                  # opportunistic
 }
 
 _ALLOWED_HOSTS = frozenset(RATE_TABLE)
@@ -62,10 +71,14 @@ TTL = {
     "negative": 48 * 3600,
     "retraction": 48 * 3600,
     "fulltext": 30 * 86400,
+    "dataset": 14 * 86400,
 }
 
 _BACKOFF_SECONDS = 2.0
 _MAX_RETRIES = 3
+# Cap on an honored Retry-After / x-ratelimit-reset sleep. Beyond this we
+# degrade the source rather than stall a fan-out (Zenodo's 60 s window degrades).
+_RETRY_AFTER_CAP = 30.0
 
 
 def mailto() -> str | None:
@@ -352,14 +365,28 @@ def fetch(
                 if cacheable:
                     cache.put(url, accept, status, body, ttl_class)
                 return FetchResult(status, body, url=url)
-            if status == 429:
-                remaining = (e.headers or {}).get("X-RateLimit-Remaining")
-                if remaining == "0":
-                    cache.penalize(host, 60.0)
+            if status in (429, 503):
+                headers = e.headers or {}
+                retry_after = _parse_retry_after(headers)
+                remaining = headers.get("X-RateLimit-Remaining")
+                # A definitive "budget exhausted" with an over-cap reset -> degrade.
+                if remaining == "0" and (retry_after is None or retry_after > _RETRY_AFTER_CAP):
+                    cache.penalize(host, min(retry_after or 60.0, 120.0))
                     return FetchResult(status, body, degraded_reason="rate budget exhausted", url=url)
+                if retry_after is not None and retry_after <= _RETRY_AFTER_CAP and attempt < _MAX_RETRIES:
+                    REQUEST_COUNTS.setdefault("retry_after", {})[host] = \
+                        REQUEST_COUNTS.setdefault("retry_after", {}).get(host, 0) + 1
+                    time.sleep(retry_after)
+                    cache.penalize(host, retry_after)
+                    last_reason = f"{status} honored Retry-After {retry_after:g}s"
+                    continue
+                if retry_after is not None and retry_after > _RETRY_AFTER_CAP:
+                    cache.penalize(host, min(retry_after, 120.0))
+                    return FetchResult(status, body,
+                                       degraded_reason=f"{status}; Retry-After {retry_after:g}s exceeds cap", url=url)
                 backoff = _BACKOFF_SECONDS * (2**attempt)
                 cache.penalize(host, backoff)
-                last_reason = "429 after retries"
+                last_reason = f"{status} after retries"
                 continue
             if 500 <= status < 600:
                 cache.penalize(host, _BACKOFF_SECONDS * (2**attempt))
@@ -372,6 +399,22 @@ def fetch(
             time.sleep(_BACKOFF_SECONDS * (2**attempt) if attempt < _MAX_RETRIES else 0)
             continue
     return FetchResult(0, degraded_reason=last_reason, url=url)
+
+
+def _parse_retry_after(headers) -> float | None:
+    """Seconds to wait from a Retry-After (delta-seconds only) or an
+    x-ratelimit-reset header. HTTP-date Retry-After is ignored (rare here)."""
+    for key in ("Retry-After", "retry-after"):
+        val = headers.get(key)
+        if val and str(val).strip().isdigit():
+            return float(val)
+    for key in ("x-ratelimit-reset", "X-RateLimit-Reset"):
+        val = headers.get(key)
+        if val and str(val).strip().isdigit():
+            n = float(val)
+            # Heuristic: a small number is a delta; a large one is an epoch.
+            return n if n < 100000 else max(0.0, n - time.time())
+    return None
 
 
 def _user_agent() -> str:

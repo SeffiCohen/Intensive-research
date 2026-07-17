@@ -1,0 +1,16 @@
+{
+  "checklist": "neurips",
+  "title": "NeurIPS-style checklist — machine-learning papers",
+  "version": "2024",
+  "items": [
+    {"id": "ml-claims", "section": "Abstract/Intro", "requirement_text": "Main claims accurately reflect the paper's contributions and scope.", "canonical_source_url": "https://neurips.cc/public/guides/PaperChecklist", "severity": "must", "auto_detectable": "llm-judge", "reviewer": "ir-impact-reviewer"},
+    {"id": "ml-limitations", "section": "Discussion", "requirement_text": "The paper discusses the limitations of the work.", "canonical_source_url": "https://neurips.cc/public/guides/PaperChecklist", "severity": "must", "auto_detectable": "structural", "check": "has_limitations"},
+    {"id": "ml-reproducibility", "section": "Methods", "requirement_text": "Information needed to reproduce the main results is disclosed (architecture, hyperparameters, compute).", "canonical_source_url": "https://neurips.cc/public/guides/PaperChecklist", "severity": "must", "auto_detectable": "regex", "pattern": "hyperparameter|learning rate|epochs|batch size|architecture|compute|gpu|seed"},
+    {"id": "ml-code", "section": "Methods", "requirement_text": "Code and data access are provided or a reason for withholding is given.", "canonical_source_url": "https://neurips.cc/public/guides/PaperChecklist", "severity": "must", "auto_detectable": "structural", "check": "has_code_availability"},
+    {"id": "ml-datasplits", "section": "Experiments", "requirement_text": "Train/validation/test splits and data details are specified.", "canonical_source_url": "https://neurips.cc/public/guides/PaperChecklist", "severity": "must", "auto_detectable": "regex", "pattern": "train(ing)?[ /]?(set|split)|test set|validation|held-out|dataset"},
+    {"id": "ml-errorbars", "section": "Experiments", "requirement_text": "Results report error bars / variability across runs or seeds.", "canonical_source_url": "https://neurips.cc/public/guides/PaperChecklist", "severity": "must", "auto_detectable": "regex", "pattern": "error bar|standard deviation|std|confidence interval|across (\\d+ )?(runs|seeds)|±"},
+    {"id": "ml-baselines", "section": "Experiments", "requirement_text": "Comparisons use appropriate, fairly-tuned baselines.", "canonical_source_url": "https://neurips.cc/public/guides/PaperChecklist", "severity": "must", "auto_detectable": "llm-judge", "reviewer": "ir-methodology-reviewer"},
+    {"id": "ml-broaderimpact", "section": "Other", "requirement_text": "Broader impacts / potential negative societal impacts are discussed.", "canonical_source_url": "https://neurips.cc/public/guides/PaperChecklist", "severity": "should", "auto_detectable": "regex", "pattern": "broader impact|societal impact|ethical consideration|potential (harm|misuse)"},
+    {"id": "ml-compute", "section": "Experiments", "requirement_text": "Compute resources (type, amount) used are reported.", "canonical_source_url": "https://neurips.cc/public/guides/PaperChecklist", "severity": "should", "auto_detectable": "regex", "pattern": "gpu|tpu|compute|gpu-hours|a100|v100|wall-clock|training time"}
+  ]
+}

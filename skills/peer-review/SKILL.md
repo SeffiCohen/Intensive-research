@@ -54,5 +54,22 @@ Only while aggregate < 80 or a P0 is open, up to the tier's loop cap
 (1/2/3); each loop pre-commits which findings it addresses; re-review is a
 narrow pass. Early-stop on <3-point movement with no P0.
 
-Report to the user: decision, aggregate score, top concerns, and the
-`reviews/` paths.
+## Step 2.5 — Submission-readiness gate (G4)
+
+After the decision, run the readiness gate so "ready" means "meets the venue's
+reporting bar", not just "reviewers liked it". The methodology reviewer declares
+the study design → checklist set
+(`${CLAUDE_PLUGIN_ROOT}/skills/intensive-research/references/reporting-standards.md`);
+reviewers write adequacy `.done` shards for the `llm-judge` items into
+`reviews/readiness/`:
+```
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/scholar.py" readiness --manuscript <file> \
+  --checklist-set <set> --run-mode <mode> [--figure-manifest ...] \
+  --adequacy-shards reviews/readiness --out reviews/submission_readiness.json
+```
+G4 passes iff readiness exits 0 AND every required reviewer `.done` is
+`adequate` (highest-stakes items need methodology + devil's-advocate consensus).
+Emit a `reviews/submission_readiness.md` scorecard.
+
+Report to the user: decision, aggregate score, submission-readiness verdict,
+top concerns, and the `reviews/` paths.

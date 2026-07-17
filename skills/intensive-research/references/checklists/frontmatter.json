@@ -1,0 +1,16 @@
+{
+  "checklist": "frontmatter",
+  "title": "Manuscript front/back-matter completeness (desk-reject prevention)",
+  "version": "1.0",
+  "note": "Applies to every submission regardless of design. auto_detectable structural items drive the readiness exit code; llm-judge items defer to reviewer adequacy shards.",
+  "items": [
+    {"id": "fm-coi", "section": "Declarations", "requirement_text": "A competing/conflict-of-interest statement is present.", "canonical_source_url": "https://doi.org/10.1136/bmj.n71", "severity": "must", "auto_detectable": "structural", "check": "has_coi"},
+    {"id": "fm-funding", "section": "Declarations", "requirement_text": "A funding/financial-support statement is present.", "canonical_source_url": "https://doi.org/10.1136/bmj.n71", "severity": "must", "auto_detectable": "structural", "check": "has_funding"},
+    {"id": "fm-data-availability", "section": "Declarations", "requirement_text": "A data-availability statement is present.", "canonical_source_url": "https://doi.org/10.1038/s41586-020-2196-x", "severity": "must", "auto_detectable": "structural", "check": "has_data_availability"},
+    {"id": "fm-code-availability", "section": "Declarations", "requirement_text": "A code-availability statement is present (for computational work).", "canonical_source_url": "https://doi.org/10.1038/s41586-020-2196-x", "severity": "should", "auto_detectable": "structural", "check": "has_code_availability"},
+    {"id": "fm-ethics", "section": "Declarations", "requirement_text": "An ethics/IRB approval statement is present when human or animal subjects are involved.", "canonical_source_url": "https://doi.org/10.1136/bmj.n71", "severity": "should", "auto_detectable": "structural", "check": "has_ethics"},
+    {"id": "fm-abstract", "section": "Front matter", "requirement_text": "A structured or narrative abstract is present.", "canonical_source_url": "https://doi.org/10.1136/bmj.n71", "severity": "must", "auto_detectable": "structural", "check": "has_abstract"},
+    {"id": "fm-references", "section": "Back matter", "requirement_text": "A reference/bibliography section is present.", "canonical_source_url": "https://doi.org/10.1136/bmj.n71", "severity": "must", "auto_detectable": "structural", "check": "has_references"},
+    {"id": "fm-limitations", "section": "Discussion", "requirement_text": "A limitations discussion is present and maps to the study's claims.", "canonical_source_url": "https://doi.org/10.1136/bmj.n71", "severity": "must", "auto_detectable": "llm-judge", "reviewer": "ir-devils-advocate"}
+  ]
+}

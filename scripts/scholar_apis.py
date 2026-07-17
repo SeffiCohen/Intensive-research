@@ -842,3 +842,449 @@ SEARCH_ADAPTERS = {
     "openreview": openreview_search,
     "s2": s2_search,
 }
+
+
+# ==========================================================================
+# v2 — Venue style-learning helpers (reuse existing hosts; no allowlist change)
+# ==========================================================================
+
+def openalex_sources_search(cache, name, source_type=None, fresh=False):
+    """Resolve a venue name to OpenAlex source records, ranked by works_count."""
+    params = {"search": name, "per-page": 10, "sort": "works_count:desc"}
+    if source_type:
+        params["filter"] = f"type:{source_type}"
+    if http.mailto():
+        params["mailto"] = http.mailto()
+    url = "https://api.openalex.org/sources?" + urllib.parse.urlencode(params)
+    r = http.fetch(cache, url, ttl_class="metadata", fresh=fresh)
+    if not r.ok:
+        return [], r.degraded_reason or f"http {r.status}"
+    out = []
+    for s in (r.json() or {}).get("results", []):
+        out.append({
+            "id": (s.get("id") or "").rsplit("/", 1)[-1] or None,
+            "display_name": s.get("display_name"),
+            "issn_l": s.get("issn_l"),
+            "type": s.get("type"),
+            "publisher": s.get("host_organization_name"),
+            "works_count": s.get("works_count"),
+            "is_oa": s.get("is_oa"),
+        })
+    return out, None
+
+
+def openalex_works_by_source(cache, source_id, since=None, n=5, oa_only=False, fresh=False):
+    """Newest works from a specific OpenAlex source (venue)."""
+    filters = [f"primary_location.source.id:{source_id}"]
+    if since:
+        filters.append(f"from_publication_date:{since}")
+    if oa_only:
+        filters.append("is_oa:true")
+    params = {"filter": ",".join(filters), "sort": "publication_date:desc", "per-page": min(n, 50)}
+    if http.mailto():
+        params["mailto"] = http.mailto()
+    url = "https://api.openalex.org/works?" + urllib.parse.urlencode(params)
+    r = http.fetch(cache, url, ttl_class="search", fresh=fresh)
+    if not r.ok:
+        return [], r.degraded_reason or f"http {r.status}"
+    return [_openalex_normalize(w, f"venue:{source_id}") for w in (r.json() or {}).get("results", [])[:n]], None
+
+
+def crossref_journal_works(cache, issn, n=5, fresh=False):
+    """Newest works from a journal by ISSN (Crossref fallback when no OpenAlex source)."""
+    params = {"sort": "published", "order": "desc", "rows": min(n, 50)}
+    if http.mailto():
+        params["mailto"] = http.mailto()
+    url = f"https://api.crossref.org/journals/{urllib.parse.quote(issn)}/works?" + urllib.parse.urlencode(params)
+    r = http.fetch(cache, url, ttl_class="search", fresh=fresh)
+    if not r.ok:
+        return [], r.degraded_reason or f"http {r.status}"
+    items = ((r.json() or {}).get("message") or {}).get("items", [])
+    return [_crossref_normalize(i, f"venue-issn:{issn}") for i in items[:n]], None
+
+
+def dblp_venue_works(cache, venue, n=5, fresh=False):
+    """CS-venue works via DBLP (fallback for venues without an ISSN)."""
+    return dblp_search(cache, f"venue:{venue}:", limit=n, fresh=fresh)
+
+
+# ==========================================================================
+# v2 — Dataset discovery adapters
+# ==========================================================================
+
+_LICENSE_NC = re.compile(r"\b(nc|non-?commercial|cc[- ]?by[- ]?nc)\b", re.IGNORECASE)
+_LICENSE_ND = re.compile(r"\b(nd|no-?deriv|cc[- ]?by[- ]?nd)\b", re.IGNORECASE)
+_LICENSE_SA = re.compile(r"\b(sa|share-?alike)\b", re.IGNORECASE)
+_OPEN_LICENSE = re.compile(
+    r"\b(cc[- ]?by(?![- ]?n)|cc0|mit|apache|bsd|public domain|odbl|odc-by|gpl|lgpl)\b",
+    re.IGNORECASE)
+
+
+def _license_block(spdx=None, name=None, uri=None):
+    text = " ".join(str(x) for x in (spdx, name, uri) if x)
+    if not text.strip():
+        return {"spdx_id": spdx, "name": name, "uri": uri, "is_open": None,
+                "noncommercial": None, "sharealike": None}
+    return {
+        "spdx_id": spdx, "name": name, "uri": uri,
+        "is_open": bool(_OPEN_LICENSE.search(text)) and not _LICENSE_NC.search(text),
+        "noncommercial": bool(_LICENSE_NC.search(text)),
+        "sharealike": bool(_LICENSE_SA.search(text)),
+        "noderivatives": bool(_LICENSE_ND.search(text)),
+    }
+
+
+def _dataset(source, query, **f):
+    """Normalize an adapter hit to the canonical DATASET-RECORD. Every field
+    nullable; a missing field is explicit null, never fabricated."""
+    ids = f.pop("ids", {})
+    rec = {
+        "record_id": f.pop("record_id", None) or f"{source}:{f.get('native_id')}",
+        "source": source,
+        "native_id": f.pop("native_id", None),
+        "mirrors": f.pop("mirrors", []),
+        "title": f.pop("title", None),
+        "creators": f.pop("creators", []),
+        "year": f.pop("year", None),
+        "doi": normalize_doi(f.pop("doi", None)),
+        "conceptdoi": normalize_doi(f.pop("conceptdoi", None)),
+        "url": f.pop("url", None),
+        "description": (f.pop("description", None) or None),
+        "task_categories": f.pop("task_categories", []),
+        "modalities": f.pop("modalities", []),
+        "languages": f.pop("languages", []),
+        "domain": f.pop("domain", None),
+        "license": f.pop("license", None) or _license_block(),
+        "access": f.pop("access", None) or {"right": None, "gated": None,
+                                            "requires_dua": None, "requires_login": None},
+        "size": f.pop("size", None) or {"num_instances": None, "num_features": None,
+                                        "num_bytes": None, "size_category": None},
+        "splits": f.pop("splits", []),
+        "features": f.pop("features", []),
+        "default_target": f.pop("default_target", None),
+        "formats": f.pop("formats", []),
+        "download_urls": f.pop("download_urls", []),   # recorded, NEVER fetched
+        "checksums": f.pop("checksums", []),
+        "provenance": f.pop("provenance", {}),
+        "citations": f.pop("citations", {"count": None, "source": None}),
+        "popularity": f.pop("popularity", {"downloads": None, "likes": None}),
+        "datasheet": f.pop("datasheet", {"croissant": None, "datasheet_url": None,
+                                         "has_ethics_statement": None, "has_biases_statement": None}),
+        "integrity": f.pop("integrity", {"known_leakage_flag": None,
+                                         "known_contamination_flag": None,
+                                         "deprecation_flag": None, "disabled": None}),
+        "paperswithcode_id": f.pop("paperswithcode_id", None),
+        "last_modified": f.pop("last_modified", None),
+        "retrieved_at": now_iso(),
+        "provenance_query": query,
+        "degraded_reason": f.pop("degraded_reason", None),
+    }
+    rec.update(f)
+    return rec
+
+
+def _hf_tag_values(tags, prefix):
+    out = []
+    for t in tags or []:
+        if isinstance(t, str) and t.startswith(prefix):
+            out.append(t[len(prefix):])
+    return out
+
+
+def adapter_hf_datasets(cache, query, limit=25, fresh=False):
+    params = {"search": query, "limit": min(limit, 100), "full": "true", "sort": "downloads"}
+    url = "https://huggingface.co/api/datasets?" + urllib.parse.urlencode(params)
+    r = http.fetch(cache, url, ttl_class="dataset", fresh=fresh)
+    if not r.ok:
+        return [], r.degraded_reason or f"http {r.status}"
+    out = []
+    for d in (r.json() or [])[:limit]:
+        tags = d.get("tags", [])
+        card = d.get("cardData") or {}
+        lic = card.get("license") or (_hf_tag_values(tags, "license:") or [None])[0]
+        out.append(_dataset(
+            "hf", query,
+            native_id=d.get("id"), record_id=f"hf:{d.get('id')}",
+            title=d.get("id"), url=f"https://huggingface.co/datasets/{d.get('id')}",
+            task_categories=(card.get("task_categories") or _hf_tag_values(tags, "task_categories:")),
+            modalities=_hf_tag_values(tags, "modality:") or card.get("modalities", []),
+            languages=(card.get("language") if isinstance(card.get("language"), list) else _hf_tag_values(tags, "language:")),
+            license=_license_block(spdx=lic, name=lic),
+            access={"right": "gated" if d.get("gated") else "open",
+                    "gated": bool(d.get("gated")), "requires_dua": bool(d.get("gated")),
+                    "requires_login": bool(d.get("private"))},
+            size={"num_instances": None, "num_features": None, "num_bytes": None,
+                  "size_category": (_hf_tag_values(tags, "size_categories:") or [None])[0]},
+            popularity={"downloads": d.get("downloads"), "likes": d.get("likes")},
+            paperswithcode_id=card.get("paperswithcode_id"),
+            datasheet={"croissant": f"https://huggingface.co/api/datasets/{d.get('id')}/croissant",
+                       "datasheet_url": f"https://huggingface.co/datasets/{d.get('id')}",
+                       "has_ethics_statement": None, "has_biases_statement": None},
+            last_modified=d.get("lastModified"),
+            arxiv_ids=_hf_tag_values(tags, "arxiv:"),
+        ))
+    return out, None
+
+
+def hf_dataset_card(cache, dataset_id, fresh=False):
+    url = f"https://huggingface.co/api/datasets/{urllib.parse.quote(dataset_id, safe='/')}"
+    r = http.fetch(cache, url, ttl_class="id_lookup", fresh=fresh)
+    if r.status == 404:
+        return None, None
+    if not r.ok:
+        return None, r.degraded_reason or f"http {r.status}"
+    return r.json(), None
+
+
+def hf_dataset_splits(cache, dataset_id, fresh=False):
+    url = "https://datasets-server.huggingface.co/splits?" + urllib.parse.urlencode({"dataset": dataset_id})
+    r = http.fetch(cache, url, ttl_class="dataset", fresh=fresh)
+    if not r.ok:
+        return None, r.degraded_reason or f"http {r.status}"
+    data = r.json() or {}
+    splits = [{"name": s.get("split"), "config": s.get("config")} for s in data.get("splits", [])]
+    return {"splits": splits, "pending": data.get("pending"), "failed": data.get("failed")}, None
+
+
+def adapter_datacite(cache, query, limit=25, fresh=False):
+    # page[size] must be percent-encoded.
+    q = urllib.parse.urlencode({"query": query, "resource-type-id": "dataset"})
+    url = f"https://api.datacite.org/dois?{q}&page%5Bsize%5D={min(limit, 100)}"
+    r = http.fetch(cache, url, ttl_class="dataset", fresh=fresh)
+    if not r.ok:
+        return [], r.degraded_reason or f"http {r.status}"
+    out = []
+    for d in (r.json() or {}).get("data", [])[:limit]:
+        a = d.get("attributes", {})
+        rights = a.get("rightsList") or []
+        spdx = next((x.get("rightsIdentifier") for x in rights if x.get("rightsIdentifier")), None)
+        rname = next((x.get("rights") for x in rights if x.get("rights")), None)
+        ruri = next((x.get("rightsUri") for x in rights if x.get("rightsUri")), None)
+        titles = a.get("titles") or []
+        out.append(_dataset(
+            "datacite", query,
+            native_id=d.get("id"), record_id=f"datacite:{d.get('id')}",
+            doi=a.get("doi") or d.get("id"),
+            title=(titles[0].get("title") if titles else None),
+            creators=[c.get("name") for c in a.get("creators", []) if c.get("name")],
+            year=a.get("publicationYear"),
+            url=a.get("url"),
+            description=next((x.get("description") for x in (a.get("descriptions") or []) if x.get("description")), None),
+            license=_license_block(spdx=spdx, name=rname, uri=ruri),
+            citations={"count": (a.get("citationCount")), "source": "datacite"},
+            provenance={"publisher": a.get("publisher"), "funding": [f.get("funderName") for f in a.get("fundingReferences", [])]},
+        ))
+    return out, None
+
+
+def adapter_zenodo(cache, query, limit=25, fresh=False):
+    url = "https://zenodo.org/api/records?" + urllib.parse.urlencode(
+        {"q": query, "type": "dataset", "size": min(limit, 100)})
+    r = http.fetch(cache, url, ttl_class="dataset", fresh=fresh)
+    if not r.ok:
+        return [], r.degraded_reason or f"http {r.status}"
+    out = []
+    for h in ((r.json() or {}).get("hits") or {}).get("hits", [])[:limit]:
+        m = h.get("metadata", {})
+        lic = (m.get("license") or {})
+        lic_id = lic.get("id") if isinstance(lic, dict) else lic
+        files = h.get("files", [])
+        out.append(_dataset(
+            "zenodo", query,
+            native_id=str(h.get("id")), record_id=f"zenodo:{h.get('id')}",
+            doi=h.get("doi") or m.get("doi"), conceptdoi=h.get("conceptdoi"),
+            title=m.get("title"),
+            creators=[c.get("name") for c in m.get("creators", []) if c.get("name")],
+            year=(m.get("publication_date") or "")[:4] or None,
+            url=(h.get("links") or {}).get("self_html") or (h.get("links") or {}).get("html"),
+            description=_strip_jats(m.get("description")),
+            license=_license_block(spdx=lic_id, name=lic_id),
+            access={"right": m.get("access_right"), "gated": m.get("access_right") not in ("open", None),
+                    "requires_dua": m.get("access_right") == "restricted", "requires_login": None},
+            size={"num_instances": None, "num_features": None,
+                  "num_bytes": sum(fi.get("size", 0) for fi in files) or None, "size_category": None},
+            download_urls=[(fi.get("links") or {}).get("self") for fi in files],
+            checksums=[fi.get("checksum") for fi in files],
+        ))
+    return out, None
+
+
+def adapter_openml(cache, query, limit=25, fresh=False):
+    # OpenML's classic data_name filter is exact-match, so it is useless for
+    # keyword discovery. Fetch a capped list once (cached) and substring-filter
+    # by name client-side — the same approach used for UCI.
+    url = "https://www.openml.org/api/v1/json/data/list/limit/1000"
+    r = http.fetch(cache, url, ttl_class="dataset", fresh=fresh)
+    if not r.ok:
+        return [], r.degraded_reason or f"http {r.status}"
+    body = r.json() or {}
+    rows = ((body.get("data") or {}).get("dataset")) or []
+    ql = query.lower()
+    terms = [t for t in ql.split() if t]
+    filtered = [d for d in rows if all(t in (d.get("name") or "").lower() for t in terms)] if terms else rows
+    out = []
+    for d in filtered[:limit]:
+        quals = {q.get("name"): q.get("value") for q in d.get("quality", [])}
+        out.append(_dataset(
+            "openml", query,
+            native_id=str(d.get("did")), record_id=f"openml:{d.get('did')}",
+            title=d.get("name"), url=f"https://www.openml.org/d/{d.get('did')}",
+            license=_license_block(name=d.get("licence")),
+            access={"right": "open", "gated": False, "requires_dua": False, "requires_login": False},
+            formats=[d.get("format")] if d.get("format") else [],
+            size={"num_instances": _to_int(quals.get("NumberOfInstances")),
+                  "num_features": _to_int(quals.get("NumberOfFeatures")),
+                  "num_bytes": None, "size_category": None},
+            default_target=d.get("target_feature") or None,
+            integrity={"known_leakage_flag": None, "known_contamination_flag": None,
+                       "deprecation_flag": d.get("status") == "deactivated",
+                       "disabled": d.get("status") == "deactivated"},
+        ))
+    return out, None
+
+
+def adapter_uci(cache, query, limit=25, fresh=False):
+    url = "https://archive.ics.uci.edu/api/datasets/list"
+    r = http.fetch(cache, url, ttl_class="dataset", fresh=fresh)
+    if not r.ok:
+        return [], r.degraded_reason or f"http {r.status}"
+    data = r.json() or {}
+    items = data.get("data") if isinstance(data, dict) else data
+    if not isinstance(items, list):
+        return [], "unexpected uci body"
+    ql = query.lower()
+    out = []
+    for d in items:
+        name = d.get("name") or d.get("Name") or ""
+        if ql and ql not in name.lower():
+            continue
+        did = d.get("id") or d.get("ID")
+        out.append(_dataset(
+            "uci", query,
+            native_id=str(did), record_id=f"uci:{did}",
+            title=name, url=f"https://archive.ics.uci.edu/dataset/{did}",
+            task_categories=[d.get("Task")] if d.get("Task") else [],
+            size={"num_instances": _to_int(d.get("numInstances") or d.get("Instances")),
+                  "num_features": _to_int(d.get("numFeatures") or d.get("Features")),
+                  "num_bytes": None, "size_category": None},
+            license=_license_block(name="UCI (see landing page)"),
+            access={"right": "open", "gated": False, "requires_dua": False, "requires_login": False},
+        ))
+        if len(out) >= limit:
+            break
+    return out, None
+
+
+def adapter_ncbi_gds(cache, query, limit=25, fresh=False):
+    return _ncbi_dataset(cache, query, "gds", limit, fresh)
+
+
+def adapter_ncbi_sra(cache, query, limit=25, fresh=False):
+    return _ncbi_dataset(cache, query, "sra", limit, fresh)
+
+
+def _ncbi_dataset(cache, query, db, limit, fresh):
+    params = _eutils_params({"db": db, "term": query, "retmode": "json", "retmax": min(limit, 50)})
+    url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?" + urllib.parse.urlencode(params)
+    r = http.fetch(cache, url, ttl_class="search", fresh=fresh)
+    if not r.ok:
+        return [], r.degraded_reason or f"http {r.status}"
+    ids = ((r.json() or {}).get("esearchresult") or {}).get("idlist", [])
+    if not ids:
+        return [], None
+    sp = _eutils_params({"db": db, "id": ",".join(ids), "retmode": "json"})
+    surl = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?" + urllib.parse.urlencode(sp)
+    sr = http.fetch(cache, surl, ttl_class="metadata", fresh=fresh)
+    result = (sr.json() or {}).get("result", {}) if sr.ok else {}
+    out = []
+    for uid in ids:
+        doc = result.get(uid) or {}
+        out.append(_dataset(
+            db, query,
+            native_id=uid, record_id=f"{db}:{uid}",
+            title=doc.get("title") or f"{db.upper()} {uid}",
+            url=f"https://www.ncbi.nlm.nih.gov/{'gds' if db == 'gds' else 'sra'}/{uid}",
+            domain="biomedical",
+            modalities=["genomic"],
+            description=doc.get("summary"),
+            access={"right": "open", "gated": False, "requires_dua": None, "requires_login": False},
+        ))
+    return out, None
+
+
+def adapter_openneuro(cache, query, limit=25, fresh=False):
+    body = json.dumps({
+        "query": "query($q:String!){datasets(first:%d){edges{node{id latestSnapshot{tag description{Name}}}}}}" % min(limit, 25),
+        "variables": {"q": query},
+    }).encode()
+    r = http.fetch(cache, "https://openneuro.org/crn/graphql", ttl_class="dataset",
+                   method="POST", data=body, headers={"Content-Type": "application/json"}, fresh=fresh)
+    if not r.ok:
+        return [], r.degraded_reason or f"http {r.status}"
+    edges = (((r.json() or {}).get("data") or {}).get("datasets") or {}).get("edges", [])
+    out = []
+    for e in edges[:limit]:
+        node = e.get("node", {})
+        desc = (node.get("latestSnapshot") or {}).get("description") or {}
+        out.append(_dataset(
+            "openneuro", query,
+            native_id=node.get("id"), record_id=f"openneuro:{node.get('id')}",
+            title=desc.get("Name") or node.get("id"),
+            url=f"https://openneuro.org/datasets/{node.get('id')}",
+            domain="neuroimaging", modalities=["mri"],
+            access={"right": "open", "gated": False, "requires_dua": None, "requires_login": False},
+        ))
+    return out, None
+
+
+def _to_int(v):
+    try:
+        return int(float(v))
+    except (TypeError, ValueError):
+        return None
+
+
+DATASET_SOURCES = ("hf", "openml", "datacite", "zenodo", "uci", "geo", "sra", "openneuro")
+DEFAULT_DATASET_SOURCES = ("hf", "openml", "datacite", "zenodo", "uci")
+DATASET_ADAPTERS = {
+    "hf": adapter_hf_datasets,
+    "openml": adapter_openml,
+    "datacite": adapter_datacite,
+    "zenodo": adapter_zenodo,
+    "uci": adapter_uci,
+    "geo": adapter_ncbi_gds,
+    "sra": adapter_ncbi_sra,
+    "openneuro": adapter_openneuro,
+}
+
+
+def collapse_dataset_mirrors(records):
+    """Collapse the same dataset across mirrors (shared DOI/conceptdoi or exact
+    normalized title+creator) into one record with a mirrors[] list. Distinct
+    from paper INDEX_ANCESTRY."""
+    from scholar_match import exact_normalized_title
+    clusters = []
+    for rec in records:
+        key_doi = rec.get("conceptdoi") or rec.get("doi")
+        target = None
+        for c in clusters:
+            ckey = c.get("conceptdoi") or c.get("doi")
+            if key_doi and ckey and normalize_doi(key_doi) == normalize_doi(ckey):
+                target = c
+                break
+            if (rec.get("title") and c.get("title")
+                    and exact_normalized_title(rec["title"], c["title"])
+                    and set(rec.get("creators") or []) & set(c.get("creators") or [])):
+                target = c
+                break
+        if target is None:
+            rec.setdefault("mirrors", [])
+            clusters.append(rec)
+        else:
+            target["mirrors"].append({"source": rec["source"], "id": rec.get("native_id"), "doi": rec.get("doi")})
+            for k in ("doi", "conceptdoi", "description", "paperswithcode_id"):
+                if not target.get(k) and rec.get(k):
+                    target[k] = rec[k]
+            if (rec.get("citations") or {}).get("count") and not (target.get("citations") or {}).get("count"):
+                target["citations"] = rec["citations"]
+    return clusters

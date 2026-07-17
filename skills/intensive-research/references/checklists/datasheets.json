@@ -1,0 +1,14 @@
+{
+  "checklist": "datasheets",
+  "title": "Datasheets for Datasets — dataset documentation",
+  "version": "2021",
+  "items": [
+    {"id": "ds-motivation", "section": "Motivation", "requirement_text": "State why the dataset was created and by whom.", "canonical_source_url": "https://doi.org/10.1145/3458723", "severity": "must", "auto_detectable": "llm-judge", "reviewer": "ir-methodology-reviewer"},
+    {"id": "ds-composition", "section": "Composition", "requirement_text": "Describe what the instances represent, the number of instances, and any splits.", "canonical_source_url": "https://doi.org/10.1145/3458723", "severity": "must", "auto_detectable": "regex", "pattern": "instances|examples|records|samples|n\\s*=|split"},
+    {"id": "ds-collection", "section": "Collection", "requirement_text": "Describe how the data was collected and any sampling strategy.", "canonical_source_url": "https://doi.org/10.1145/3458723", "severity": "must", "auto_detectable": "regex", "pattern": "collect(ed|ion)|sampled|scraped|crowdsourced|annotat"},
+    {"id": "ds-consent-pii", "section": "Collection", "requirement_text": "State whether the data relates to people and whether consent / de-identification applies.", "canonical_source_url": "https://doi.org/10.1145/3458723", "severity": "must", "auto_detectable": "regex", "pattern": "consent|de-identif|anonymi[sz]|personal(ly identifiable)?|pii|gdpr|hipaa|irb"},
+    {"id": "ds-preprocessing", "section": "Preprocessing", "requirement_text": "Describe preprocessing/cleaning/labeling done to the raw data.", "canonical_source_url": "https://doi.org/10.1145/3458723", "severity": "should", "auto_detectable": "regex", "pattern": "preprocess|cleaned|tokeni[sz]|normali[sz]|label(ed|ing)|filtered"},
+    {"id": "ds-license", "section": "Distribution", "requirement_text": "State the dataset license and any usage restrictions.", "canonical_source_url": "https://doi.org/10.1145/3458723", "severity": "must", "auto_detectable": "regex", "pattern": "license|licence|cc[- ]?by|mit|apache|terms of use|usage restriction"},
+    {"id": "ds-biases", "section": "Composition", "requirement_text": "Discuss known biases, gaps, or representativeness limits.", "canonical_source_url": "https://doi.org/10.1145/3458723", "severity": "should", "auto_detectable": "regex", "pattern": "bias|representative|imbalance|skew|underrepresent|limitation"}
+  ]
+}

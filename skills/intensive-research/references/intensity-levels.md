@@ -20,6 +20,10 @@ size** — it NEVER reduces verification or claim-audit coverage, which are alwa
 | Reviewer panel (differentiated seats) | 3 | 5 | 5 |
 | Devil's-advocate refutations / claim | 1 | 2 | 3 |
 | Revision loops (only if below pass bar) | 1 | 2 | 3 |
+| Venue style sample (recent exemplars) | 3 | 5 | 8 |
+| Dataset candidates vetted (experiment-design) | top-3 | top-5 | top-10 |
+| Figure critique-loop cap (with `--figures`) | 1 | 2 | 3 |
+| Reporting-standard checklist depth | must-pass | full | full |
 | Concurrency (parallel Tasks at once) | ≤8 | ≤8 | ≤8 |
 
 ## Hard caps (never exceeded regardless of tier)
@@ -29,6 +33,12 @@ size** — it NEVER reduces verification or claim-audit coverage, which are alwa
 - ≤ 8 concurrent Task spawns in any single fan-out batch.
 - Revision loops 2–3 run ONLY if a reviewer scores below the rubric pass bar;
   early-stop when a round changes the aggregate score by < 3 points with no P0.
+- Figures are OFF by default in `standard`; the figure critique loop is capped
+  at 1/2/3 rounds.
+- **Not tier-scaled (fixed at 100% / full strength regardless of intensity):**
+  citation existence (G1b), claim audit (G2), figure-data anchoring, must-pass
+  reporting-checklist items (G4), dataset license/ethics/modality gates (G-D),
+  and the verbatim-originality screen. Intensity scales breadth, never integrity.
 
 ## Coverage floors are checked, not assumed
 

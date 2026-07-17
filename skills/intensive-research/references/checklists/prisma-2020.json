@@ -1,0 +1,16 @@
+{
+  "checklist": "prisma-2020",
+  "title": "PRISMA 2020 — systematic reviews and meta-analyses",
+  "version": "2020",
+  "items": [
+    {"id": "prisma-title", "section": "Title", "requirement_text": "Identify the report as a systematic review.", "canonical_source_url": "https://doi.org/10.1136/bmj.n71", "severity": "should", "auto_detectable": "regex", "pattern": "systematic review"},
+    {"id": "prisma-eligibility", "section": "Methods", "requirement_text": "Specify inclusion/exclusion criteria.", "canonical_source_url": "https://doi.org/10.1136/bmj.n71", "severity": "must", "auto_detectable": "regex", "pattern": "inclusion|exclusion|eligibility criteria"},
+    {"id": "prisma-sources", "section": "Methods", "requirement_text": "Specify all databases/sources searched with the date of last search.", "canonical_source_url": "https://doi.org/10.1136/bmj.n71", "severity": "must", "auto_detectable": "regex", "pattern": "search(ed)?.*(database|openalex|crossref|pubmed|arxiv|europe pmc)"},
+    {"id": "prisma-search-strategy", "section": "Methods", "requirement_text": "Present the full search strategy for at least one source.", "canonical_source_url": "https://doi.org/10.1136/bmj.n71", "severity": "must", "auto_detectable": "llm-judge", "reviewer": "ir-methodology-reviewer"},
+    {"id": "prisma-flow", "section": "Results", "requirement_text": "Report numbers of records identified, screened, excluded (with reasons), and included — the PRISMA flow.", "canonical_source_url": "https://doi.org/10.1136/bmj.n71", "severity": "must", "auto_detectable": "regex", "pattern": "identified|screened|included.*(record|studies|n\\s*=)"},
+    {"id": "prisma-rob", "section": "Methods/Results", "requirement_text": "Describe the risk-of-bias assessment method and report results per study.", "canonical_source_url": "https://doi.org/10.1136/bmj.n71", "severity": "must", "auto_detectable": "regex", "pattern": "risk of bias|rob 2|robins|newcastle-ottawa|quality assessment"},
+    {"id": "prisma-synthesis", "section": "Methods", "requirement_text": "Describe the synthesis methods (and meta-analytic model if pooling).", "canonical_source_url": "https://doi.org/10.1136/bmj.n71", "severity": "must", "auto_detectable": "llm-judge", "reviewer": "ir-statistician"},
+    {"id": "prisma-certainty", "section": "Results", "requirement_text": "Assess certainty of evidence (e.g. GRADE) for each outcome.", "canonical_source_url": "https://doi.org/10.1136/bmj.n71", "severity": "should", "auto_detectable": "regex", "pattern": "grade|certainty of evidence|quality of evidence"},
+    {"id": "prisma-registration", "section": "Other", "requirement_text": "Provide registration information (e.g. PROSPERO) or state none.", "canonical_source_url": "https://doi.org/10.1136/bmj.n71", "severity": "should", "auto_detectable": "regex", "pattern": "prospero|registration|registered|preregist"}
+  ]
+}

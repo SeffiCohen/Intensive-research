@@ -16,6 +16,9 @@ a quick `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/scholar.py" doctor --json`):
 | `/ir-write <target> [--from research/<slug>]` | Corpus-grounded paper/section/abstract writing |
 | `/ir-review <file> [--intensity ...]` | Parallel peer-review panel + editorial decision |
 | `/ir-pipeline <topic> [--intensity ...]` | End-to-end: research → write → review → revise → final gate |
+| `/ir-datasets <goal> [--modality ...]` | Discover, rank, and vet datasets for a proposed experiment |
+| `/ir-figures <slug> [--journal ...]` | Publication-quality figures with a render→critique→fix loop |
+| `/ir-readiness <file> [--design ...]` | Submission-readiness gate (reporting standards, stats, figures) |
 | `/ir-status [slug] [--clean <slug>]` | Run dashboard: gates, PRISMA, budget, resume point |
 | `/ir-export <corpus> [--format ...]` | BibTeX / RIS / CSV / CSL-JSON export |
 | `/ir-watch <research/slug>` | Living review: new papers + NEW RETRACTIONS since the run |

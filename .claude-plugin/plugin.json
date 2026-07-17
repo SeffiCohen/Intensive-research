@@ -1,8 +1,8 @@
 {
   "name": "intensive-research",
   "displayName": "Intensive Research",
-  "version": "1.0.0",
-  "description": "Tool-grounded multi-agent academic research for Claude Code: parallel subagent literature discovery across 10 scholarly APIs, PRISMA-auditable provenance, retraction screening, and deterministic exit-code integrity gates. Every citation verified at corpus-entry time — never sampled, never from model memory.",
+  "version": "2.0.0",
+  "description": "Tool-grounded multi-agent academic research for Claude Code: parallel subagent literature discovery across scholarly + dataset APIs, PRISMA provenance, retraction screening, venue style-learning, dataset vetting, publication-quality figures, reporting-standard submission-readiness, and deterministic exit-code integrity gates. Citations verified at corpus-entry — never sampled, never from model memory; never fabricates data or results.",
   "author": {
     "name": "Seffi Cohen",
     "url": "https://github.com/SeffiCohen"
@@ -21,9 +21,13 @@
     "retraction",
     "multi-agent",
     "peer-review",
+    "datasets",
+    "figures",
+    "reporting-standards",
     "openalex",
     "crossref",
     "arxiv",
-    "pubmed"
+    "pubmed",
+    "huggingface"
   ]
 }

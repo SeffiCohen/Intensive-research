@@ -42,10 +42,19 @@ Flag: a citation dated after the claim it supposedly grounds; because/after/
 time-bombs ("recently", "the latest", "last year") that should be absolute
 dates. `scholar.py audit-report` also lints these deterministically — reconcile.
 
+## Figure-data anchoring (v2, extends G2 to visual claims)
+
+Audit every `figures/<id>.data.json`: each plotted `{value, corpus_id, quote|
+page|section}` must trace to the cited source's evidence note. A plotted value
+with no anchor, or whose anchor text does not contain the number (within
+tolerance), is `UNVERIFIABLE` — a hard G2 fail. A figure may not show a value
+the corpus does not support.
+
 ## Output (`claim-audit.md` + `claim-audit.json`)
 
-Per (sub-)claim: text, cited id(s), verdict, quoted passage, note. Plus a
-tally. **Pass bar (before G3): zero `MAJOR_DISTORTION` and zero `UNVERIFIABLE`.**
+Per (sub-)claim and per plotted value: text, cited id(s), verdict, quoted
+passage, note. Plus a tally. **Pass bar (before G3): zero `MAJOR_DISTORTION`
+and zero `UNVERIFIABLE`.**
 
 ## Boundaries
 

@@ -1,0 +1,15 @@
+{
+  "checklist": "consort",
+  "title": "CONSORT — randomized controlled trials",
+  "version": "2010",
+  "items": [
+    {"id": "consort-design", "section": "Methods", "requirement_text": "Describe trial design including allocation ratio.", "canonical_source_url": "https://doi.org/10.1136/bmj.c332", "severity": "must", "auto_detectable": "regex", "pattern": "randomi[sz]ed|randomly assigned|allocation ratio|parallel-group"},
+    {"id": "consort-randomization", "section": "Methods", "requirement_text": "Describe the method used to generate the random allocation sequence.", "canonical_source_url": "https://doi.org/10.1136/bmj.c332", "severity": "must", "auto_detectable": "regex", "pattern": "random(ization| sequence|ly generated)|allocation sequence"},
+    {"id": "consort-blinding", "section": "Methods", "requirement_text": "State who was blinded after assignment (or that the trial was open-label).", "canonical_source_url": "https://doi.org/10.1136/bmj.c332", "severity": "must", "auto_detectable": "regex", "pattern": "blind(ed|ing)|masked|open-label|single-blind|double-blind"},
+    {"id": "consort-samplesize", "section": "Methods", "requirement_text": "Explain how the sample size was determined (power analysis).", "canonical_source_url": "https://doi.org/10.1136/bmj.c332", "severity": "must", "auto_detectable": "regex", "pattern": "sample size|power analysis|powered to detect|80% power"},
+    {"id": "consort-flow", "section": "Results", "requirement_text": "Report participant flow (enrolled, allocated, analyzed) — CONSORT diagram.", "canonical_source_url": "https://doi.org/10.1136/bmj.c332", "severity": "must", "auto_detectable": "regex", "pattern": "enrolled|allocated|analy[sz]ed|lost to follow-up|randomly assigned"},
+    {"id": "consort-outcomes", "section": "Results", "requirement_text": "For each primary/secondary outcome, report effect size and its precision (95% CI).", "canonical_source_url": "https://doi.org/10.1136/bmj.c332", "severity": "must", "auto_detectable": "llm-judge", "reviewer": "ir-statistician"},
+    {"id": "consort-harms", "section": "Results", "requirement_text": "Report all important harms or unintended effects.", "canonical_source_url": "https://doi.org/10.1136/bmj.c332", "severity": "must", "auto_detectable": "regex", "pattern": "adverse event|harms|side effect|safety|tolerab"},
+    {"id": "consort-registration", "section": "Other", "requirement_text": "Provide trial registration number.", "canonical_source_url": "https://doi.org/10.1136/bmj.c332", "severity": "must", "auto_detectable": "regex", "pattern": "trial registration|clinicaltrials\\.gov|nct\\d|isrctn|registered"}
+  ]
+}

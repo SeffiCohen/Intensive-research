@@ -52,9 +52,12 @@ backs the screener's venue-quality lane.
 **Rate limiting** is a SQLite `rate_limits` table updated under `BEGIN
 IMMEDIATE` with `busy_timeout` — portable to Windows and genuinely shared across
 every concurrent subagent process, so 8 searchers hitting OpenAlex stay inside
-one budget. **Caching** is a SQLite `http_cache` with per-class TTLs (negative
-verdicts ≤48h so a fresh retraction is never masked; positives 90d; search 7d;
-metadata 30d) and a gate-version + schema-version stamp.
+one budget. A bounded `Retry-After`/`x-ratelimit-reset` backoff (cap 30s) is
+honored before a source is degraded. Dataset hosts are paced to verified limits
+(Zenodo 30/min, Hugging Face 500/300s). **Caching** is a SQLite `http_cache`
+with per-class TTLs (negative verdicts ≤48h so a fresh retraction is never
+masked; positives 90d; search 7d; metadata 30d; dataset 14d) and a gate-version
++ schema-version stamp.
 
 **Degradation contract:** `fetch()` never raises for network/HTTP conditions;
 it returns a result with a `degraded_reason`. A single API outage degrades that
@@ -77,8 +80,35 @@ source (`per_source[...].status = degraded`) and never aborts the fan-out.
 |---|---|---|---|
 | **G1a** | identification | every record has API provenance or a resolved snowball lookup | orchestrator |
 | **G1b** | after screening | 100% of *included* verified; fabricated/retracted block | `verify-batch` |
-| **G2** | after drafting | 100% of claims audited; 0 MAJOR_DISTORTION / UNVERIFIABLE / inconsistent stats | claim-auditor + statistician |
-| **G3** | before finalize | citation markers join to verified, non-retracted corpus entries | `audit-report` **exit code** |
+| **G2** | after drafting | 100% of claims audited (incl. figure-data anchoring); 0 MAJOR_DISTORTION / UNVERIFIABLE / inconsistent stats | claim-auditor + statistician |
+| **G3** | before finalize | citation markers join to verified, non-retracted corpus entries (+ figure-manifest sync) | `audit-report` **exit code** |
+| **G-D** | dataset stage | modality/license/ethics gates; unfit blocks, conditional needs sign-off | `datasets fitness --gate` **exit code** |
+| **G4** | submission readiness | reporting-standard must-pass items + orphan-p scan + reproducibility + figure integrity + reviewer adequacy shards | `readiness` **exit code** ∧ `.done` shards |
+
+## v2 subsystems
+
+- **Venue style-learning**: `venue-sample` resolves a venue (OpenAlex source →
+  Crossref ISSN → DBLP) and fetches recent exemplars (abstracts backfilled from
+  Crossref); `style-profile` deterministically computes structure/length/citation
+  -density/hedging statistics; `originality` is a verbatim-overlap screen. The
+  `ir-style-analyst` never reads exemplar prose — only `style_profile.json`
+  (numbers) crosses to the writer, and a leak-check asserts no source sentences
+  leaked. This is the plagiarism firewall by construction.
+- **Dataset discovery**: 8 dataset adapters (Hugging Face, OpenML, DataCite,
+  Zenodo, UCI, NCBI GEO/SRA, OpenNeuro) normalize to a canonical DATASET-RECORD,
+  collapsed across mirrors by shared DOI/conceptdoi (distinct from paper
+  `INDEX_ANCESTRY`). `datasets fitness` scores nine criteria with three veto
+  gates (modality, license, ethics/PII keyed off dataset content). No run/train/
+  download-full verb exists — scholar.py structurally cannot fetch a dataset
+  payload.
+- **Figures**: `ir-figure-designer` renders (user runtime Python) a vector master
+  + raster proof + an integrity `meta.json`; `ir-figure-critic` reads the PNG
+  with vision and writes a machine-readable critique; the skill loops
+  revise→re-render to a tier cap. `emit-prisma` produces a data-grounded PRISMA
+  flow (DOT/SVG). All plotted values are anchored (audited at G2).
+- **Submission-readiness**: a machine-readable checklist bank
+  (`references/checklists/*.json`) drives `readiness`; regex/structural items are
+  the exit code, `llm-judge` items delegate to reviewer `.done` adequacy shards.
 
 **Verification semantics.** An ID-keyed lookup (DOI/arXiv/PMID + exact-
 normalized-title cross-check) resolving in one authoritative index →

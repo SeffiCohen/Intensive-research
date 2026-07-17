@@ -10,9 +10,16 @@ every source against the Retraction Watch database**, and audit every claim
 against the source it cites. Integrity gates are enforced by **program exit
 codes**, not by an agent's say-so.
 
-Version 1.0.0 · License **CC BY-NC 4.0** · A derivative of
+Version 2.0.0 · License **CC BY-NC 4.0** · A derivative of
 [academic-research-skills](https://github.com/Imbad0202/academic-research-skills)
 (see [Attribution](#attribution)).
+
+> **New in v2:** venue **style-learning** (learn a journal's structure, never
+> copy its content), **dataset discovery + vetting** for experiments (license,
+> ethics/PII, size, splits — never runs experiments or fabricates results),
+> **publication-quality figures** with a render→vision-critique→fix loop, and a
+> reporting-standard **submission-readiness gate** (PRISMA/CONSORT/STROBE/
+> ARRIVE/NeurIPS/datasheets/model-cards).
 
 > ⚠️ **NonCommercial license.** This project inherits CC BY-NC 4.0 from its
 > upstream. The NC term likely restricts use inside a for-profit workplace —
@@ -77,6 +84,9 @@ concurrent subagents coordinate correctly on **Linux, macOS, and Windows**.
 | `/ir-write <target> [--from research/<slug>]` | Corpus-grounded paper / section / abstract / related-work |
 | `/ir-review <file> [--intensity ...]` | Parallel peer-review panel + editorial decision |
 | `/ir-pipeline <topic> [--intensity ...]` | End-to-end: research → write → review → revise → final gate |
+| `/ir-datasets <goal> [--modality ...]` | Discover, rank, and vet datasets for a proposed experiment (never runs them) |
+| `/ir-figures <slug> [--journal ...]` | Publication-quality figures with a render→critique→fix loop |
+| `/ir-readiness <file> [--design ...]` | Submission-readiness gate: reporting standards, stats, reproducibility, figures |
 | `/ir-status [slug] [--clean <slug>]` | Run dashboard: gates, PRISMA counts, budget, resume point |
 | `/ir-export <corpus> [--format ...]` | BibTeX / RIS / CSV / CSL-JSON export (Zotero-importable) |
 | `/ir-watch <research/<slug>>` | Living review: new papers + **new retractions** since the run |
@@ -97,17 +107,32 @@ are always 100%.
 | Citation verification | **100%** | **100%** | **100%** |
 | Claim audit | **100%** | **100%** | **100%** |
 | Review panel | 3 seats | 5 seats | 5 seats |
+| Venue style exemplars | 3 | 5 | 8 |
+| Datasets vetted | top-3 | top-5 | top-10 |
+| Figure critique loop | 1 round | 2 | 3 |
 
-Multi-agent runs cost roughly an order of magnitude more tokens than a single
-answer; the skill shows a per-tier estimate and confirms scope before spawning
-the fleet. Every report ends with a **Run Receipt** (agents spawned, API calls,
-cache hits, wall time) and a **coverage manifest** listing what was *not*
-searched.
+Verification, claim audits, figure-data anchoring, dataset license/ethics gates,
+and must-pass reporting-checklist items are **always full strength** — intensity
+scales breadth, never integrity. Multi-agent runs cost roughly an order of
+magnitude more tokens than a single answer; the skill shows a per-tier estimate
+and confirms scope before spawning the fleet. Every report ends with a **Run
+Receipt** (agents spawned, API calls, cache hits, wall time) and a **coverage
+manifest** listing what was *not* searched.
 
 ## What it does NOT do (deliberate v1 scope-outs)
 
 Honest boundaries beat overclaiming:
 
+- **Never runs experiments or fabricates data/results.** It discovers, vets, and
+  ranks datasets and *proposes* experiment protocols; running them (and honestly
+  attesting to the provenance) is the human's job. Proposal mode structurally
+  blocks any Results section for an un-run experiment.
+- **Learns venue style as statistics only** — section structure, length, citation
+  density — and never copies exemplar content (a hard verbatim screen blocks the
+  gate on any copied span).
+- **Figures need your runtime Python** (matplotlib/pillow; graphviz for
+  schematics). Without them, figures ship as spec + runnable code + caption — the
+  plugin never fakes a rendered figure.
 - **Sources without a free, ToS-clean API**: books/monographs, theses & grey
   literature, patents, standards, clinical-trial registries, non-English-only
   databases (e.g. CNKI), subscription indexes (Scopus, Web of Science), and
@@ -129,7 +154,10 @@ Distributed under the same [CC BY-NC 4.0](LICENSE) license.
 
 Retraction data: [Retraction Watch](https://retractionwatch.com/) /
 Crossref Labs. Scholarly metadata: OpenAlex, Crossref, arXiv, Europe PMC,
-NCBI/PubMed, DBLP, OpenReview, Unpaywall, OpenCitations, DOAJ.
+NCBI/PubMed, DBLP, OpenReview, Unpaywall, OpenCitations, DOAJ. Dataset metadata:
+Hugging Face, OpenML, DataCite, Zenodo, UCI ML Repository, NCBI GEO/SRA,
+OpenNeuro. Reporting standards are cited and linked (PRISMA, CONSORT, STROBE,
+ARRIVE, NeurIPS, Datasheets for Datasets, Model Cards), never reproduced.
 
 **AI is a copilot, not the pilot.** This tool handles retrieval, verification,
 and the grunt work; you define the question, judge the evidence, and own the
