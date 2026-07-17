@@ -2,11 +2,23 @@
 
 Every mined gap gets exactly one `type`. The taxonomy consolidates the
 meta-research literature on research-gap identification — Robinson, Saldanha
-& McKoy (2011, J Clin Epidemiol; the AHRQ evidence-gap framework), Miles
-(2017; seven-gap typology), and Müller-Bloch & Kranz (2015, ICIS; gap
-identification in literature reviews) — collapsed to eight types that are
-each **detectable from text or metadata** and each imply a different kind of
-future work.
+& McKoy (2011; the AHRQ evidence-gap framework, J Clin Epidemiol 64(12),
+which defines a research gap as missing/inadequate information that blocks a
+conclusion and codes WHY: A insufficient/imprecise, B biased, C
+inconsistent, D not-the-right-information), Miles (2017; seven-gap
+typology), and Müller-Bloch & Kranz (2015, ICIS; whose six-type
+characterization adapts Jacobs 2011's research-problem types) — collapsed to
+eight types that are each **detectable from text or metadata** and each
+imply a different kind of future work.
+
+The text-detection signals below are grounded in the future-work/limitation
+mining literature: future-work-sentence classification (Zhang et al. 2023,
+J Informetrics — conclusion-section filtering + 6-way FWS typing),
+challenge/direction sentence extraction (Lahav et al., AAAI 2022), and
+explicit-vs-implicit gap mapping with LLMs (GAPMAP, 2025) — explicit gaps
+carry lexical cues ("remains unknown", "no studies"); implicit gaps must be
+inferred across papers, which is why miners support them with observed
+patterns rather than quotes.
 
 | `type` | The missing thing | Detection signals |
 |---|---|---|
@@ -27,6 +39,12 @@ future work.
   than a `theory` gap; the metrics and the panel decide value.
 - A statement too vague to type ("more research is needed on X") is not a
   gap; miners must sharpen it into the missing thing or drop it.
+- Gap-spotting is not the only way to build research questions: Sandberg &
+  Alvesson (2011) show *problematization* — challenging a literature's
+  standing assumptions — yields the more original questions. The
+  `contradiction` and `theory` types are where problematization-shaped gaps
+  land; miners should not force every finding into a "something is missing"
+  frame when the real observation is "something believed looks wrong".
 - Types map to future-work shapes the report proposes: `evidence` → primary
   study or systematic review; `method` → benchmark/instrument paper;
   `bridge` → transfer study; `contradiction` → reconciliation study or
