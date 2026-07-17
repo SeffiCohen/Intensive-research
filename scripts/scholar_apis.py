@@ -131,6 +131,15 @@ def _openalex_normalize(work: dict, query: str) -> dict:
         retraction={"status": "retracted", "source": "openalex", "checked_at": now_iso()} if is_retracted
         else {"status": "unknown", "source": None, "checked_at": None},
         referenced_works=[w.rsplit("/", 1)[-1] for w in work.get("referenced_works", [])[:200]],
+        topics=[{
+            "id": (t.get("id") or "").rsplit("/", 1)[-1] or None,
+            "name": t.get("display_name"),
+            "score": t.get("score"),
+            "subfield": ((t.get("subfield") or {}).get("id") or "").rsplit("/", 1)[-1] or None,
+            "field": ((t.get("field") or {}).get("id") or "").rsplit("/", 1)[-1] or None,
+            "domain": ((t.get("domain") or {}).get("id") or "").rsplit("/", 1)[-1] or None,
+        } for t in (work.get("topics") or [])[:3]],
+        fwci=work.get("fwci"),
     )
 
 

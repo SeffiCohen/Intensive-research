@@ -30,6 +30,35 @@ at the top level rather than buried in a background agent.
 State lives in `research/<slug>/state.yaml` (phase, gates, artifact paths). A
 fresh session resumes by reading it; `/ir-status` reports the resume point.
 
+## Ideation subsystem (`skills/ideation`)
+
+`/ir-ideate <subject>` runs the same orchestration model with a different
+product: a ranked leaderboard of research gaps. Pipeline:
+
+```
+1 landscape   topic-trends CLI: growth/burst/diversity frame + searcher fan-out (G1a)
+2 gap mining  ir-gap-miner × N over corpus chunks (quote-anchored gap statements)
+              + orchestrator-nominated Swanson bridge candidates
+3 consolidate merge duplicate gaps (union of supporting papers = corroboration)
+              verify-batch --strict over all supporting papers (G1b)
+4 scoring     gap-metrics CLI (deterministic bibliometrics, ~10-15 calls/gap)
+              ∥ ir-gap-judge × 3 seats (rubric 1-5; medians computed in code)
+              ∥ ir-gap-skeptic × per gap (fresh searches try to kill the gap)
+              score-gaps --require-survival (G4: exit 1 on missing verdict)
+5 report      per-gap dossiers + audit-report gate (G3)
+```
+
+Ranking doctrine: quantitative sub-scores (momentum, headroom, corroboration,
+bridge, review deficit, accessibility) are min-max normalized across the gap
+set; qualitative axes (novelty, importance, answerability, actionability)
+come from judge medians; the composite is a weighted **geometric** mean ×100
+with a survival multiplier (contested ×0.6, refuted excluded), and every
+leaderboard carries a ±25% weight-perturbation rank range. Formulas live in
+`scripts/scholar_metrics.py` (Kleinberg burst vs whole-database denominator,
+Rao-Stirling over the OpenAlex topic hierarchy, NPMI/containment bridge
+stats, sleeping-beauty coefficient); rationale in
+`skills/ideation/references/gap-metrics.md`.
+
 ## Retrieval backbone (`scripts/scholar.py`)
 
 Stdlib-only Python, invoked everywhere as
@@ -37,9 +66,10 @@ Stdlib-only Python, invoked everywhere as
 
 ```
 scholar.py
-├─ scholar_match.py  title normalize/similarity/exact-gate, id normalizers
-├─ scholar_http.py   SQLite cache + cross-process rate buckets + degradation
-└─ scholar_apis.py   10 adapters, normalize to the canonical paper schema
+├─ scholar_match.py    title normalize/similarity/exact-gate, id normalizers
+├─ scholar_http.py     SQLite cache + cross-process rate buckets + degradation
+├─ scholar_apis.py     10 adapters, normalize to the canonical paper schema
+└─ scholar_metrics.py  gap-ranking bibliometrics (pure math + OpenAlex aggregations)
 ```
 
 **Adapters:** OpenAlex (primary — widest coverage, abstracts, citation graph),
@@ -79,6 +109,7 @@ source (`per_source[...].status = degraded`) and never aborts the fan-out.
 | **G1b** | after screening | 100% of *included* verified; fabricated/retracted block | `verify-batch` |
 | **G2** | after drafting | 100% of claims audited; 0 MAJOR_DISTORTION / UNVERIFIABLE / inconsistent stats | claim-auditor + statistician |
 | **G3** | before finalize | citation markers join to verified, non-retracted corpus entries | `audit-report` **exit code** |
+| **G4** | ideation ranking | every ranked gap carries a skeptic survival verdict; refuted gaps excluded, contested ×0.6 | `score-gaps --require-survival` **exit code** |
 
 **Verification semantics.** An ID-keyed lookup (DOI/arXiv/PMID + exact-
 normalized-title cross-check) resolving in one authoritative index →

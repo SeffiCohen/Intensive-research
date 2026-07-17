@@ -1,7 +1,7 @@
 ---
 name: research-pipeline
 description: End-to-end pipeline chaining research, writing, and review — intensive-research → paper-writing → peer-review → bounded revision loops → final citation gate — refusing to advance past any failing integrity gate. One intensity dial forwarded to every stage. Use for "research and write me a paper/report on X, reviewed". Do NOT use for a single stage (call that skill directly).
-argument-hint: "<topic> [--intensity standard|intensive|exhaustive] [--target paper|report]"
+argument-hint: "<topic> [--intensity standard|intensive|exhaustive] [--target paper|report] [--from-subject]"
 ---
 
 # Research Pipeline — end-to-end orchestrator
@@ -20,6 +20,7 @@ show the user the FULL-pipeline cost estimate for the tier (research + writing
 
 | Stage | Skill | Advance only if |
 |---|---|---|
+| 0 Ideate (optional, `--from-subject`) | ideation — rank the subject's gaps, user picks one; its statement + supporting corpus seed Stage 1 | G1b, G4 = pass; user confirmed the gap |
 | 1 Research | intensive-research (mode research or systematic-review) | G1a, G1b = pass |
 | 2 Write | paper-writing (`--from research/<slug>`) | G2 = pass, audit-report exit 0 |
 | 3 Review | peer-review (panel per tier) | decision rendered |

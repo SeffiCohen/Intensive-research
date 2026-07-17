@@ -10,7 +10,7 @@ every source against the Retraction Watch database**, and audit every claim
 against the source it cites. Integrity gates are enforced by **program exit
 codes**, not by an agent's say-so.
 
-Version 1.0.0 · License **CC BY-NC 4.0** · A derivative of
+Version 1.1.0 · License **CC BY-NC 4.0** · A derivative of
 [academic-research-skills](https://github.com/Imbad0202/academic-research-skills)
 (see [Attribution](#attribution)).
 
@@ -73,6 +73,7 @@ concurrent subagents coordinate correctly on **Linux, macOS, and Windows**.
 | Command | What it does |
 |---|---|
 | `/ir-research <q> [--mode ...] [--intensity ...]` | Multi-agent literature research (`research`, `lit-review`, `systematic-review`, `fact-check`, `brief`) |
+| `/ir-ideate <subject> [--intensity ...] [--top <k>]` | Academic ideation: mine research gaps from the literature and rank them into a skeptic-checked **GapScore leaderboard** |
 | `/ir-verify <file-or-claim>` | Citation audit of a document, or fact-check of a claim |
 | `/ir-write <target> [--from research/<slug>]` | Corpus-grounded paper / section / abstract / related-work |
 | `/ir-review <file> [--intensity ...]` | Parallel peer-review panel + editorial decision |
@@ -82,6 +83,35 @@ concurrent subagents coordinate correctly on **Linux, macOS, and Windows**.
 | `/ir-watch <research/<slug>>` | Living review: new papers + **new retractions** since the run |
 | `/ir-setup` | Environment check, keys, permission allowlist |
 | `/ir-help` | Command overview + intensity dial |
+
+## Ideation: ranked research gaps (`/ir-ideate`)
+
+Give it a subject; get back a **leaderboard of research gaps** worth
+addressing in future work — each grounded in verified papers, scored on
+transparent metrics, and adversarially checked against fresh searches so the
+tool never recommends work that already exists (the classic LLM-ideation
+failure).
+
+The pipeline: a deterministic **landscape scan** (growth, Kleinberg burst
+detection, venue concentration, Rao–Stirling topic diversity via OpenAlex
+aggregations) → parallel **gap miners** that harvest limitation/future-work
+statements and cross-paper patterns, typed against an 8-way gap taxonomy
+(evidence / method / theory / population / bridge / contradiction /
+reproducibility / translation) → **Swanson-style bridge candidates** (two
+literatures that should intersect but barely do) → deterministic
+**bibliometric metrics** per gap (momentum, headroom, corroboration, bridge
+co-occurrence, review deficit, accessibility — computed by code, not by a
+model) → a 3-seat **judge panel** (CHNRI-derived axes: novelty, importance,
+answerability, actionability; medians taken in code) → a per-gap **skeptic**
+that tries to kill the gap with targeted searches (survived / contested ×0.6
+/ refuted = excluded — enforced by `score-gaps --require-survival` exit
+code) → a composite **GapScore** (weighted geometric mean, so one near-zero
+core criterion cannot be compensated away) with a ±25% weight-perturbation
+**rank-stability range** on every leaderboard entry.
+
+Every supporting paper passes the same 100% verification + retraction gates
+as `/ir-research`; the final report passes the same citation audit. Custom
+priorities (e.g. "PhD-feasible only") via `score-gaps --weights`.
 
 ## The intensity dial
 

@@ -15,6 +15,9 @@ Subcommands:
   ingest        resolve a plain list of DOIs/arXiv ids into papers
   export        corpus -> bibtex | ris | csv | csl-json
   audit-report  deterministic G3 gate over a report's citation markers
+  topic-trends  trend/burst/diversity profile of a subject (ideation phase 1)
+  gap-metrics   deterministic bibliometric metrics for mined gaps
+  score-gaps    normalize + weight metrics into ranked GapScores + leaderboard
   doctor        environment preflight
   cache         stats | clear | path | load-retractions
 """
@@ -34,6 +37,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import scholar_apis as apis  # noqa: E402
 import scholar_http as http  # noqa: E402
+import scholar_metrics as metrics  # noqa: E402
 from scholar_match import (  # noqa: E402
     exact_normalized_title,
     generic_title,
@@ -979,6 +983,187 @@ def cmd_cache(args) -> int:
 
 
 # --------------------------------------------------------------------------
+# Ideation: topic trends, gap metrics, gap scoring
+# --------------------------------------------------------------------------
+
+def _default_window(args) -> tuple[int, int]:
+    year_to = args.year_to or int(time.strftime("%Y", time.gmtime()))
+    year_from = args.year_from or year_to - 11
+    return year_from, year_to
+
+
+def cmd_topic_trends(args) -> int:
+    cache = http.Cache()
+    try:
+        year_from, year_to = _default_window(args)
+        base, base_degraded = metrics.base_yearly(cache, year_from, year_to,
+                                                  fresh=args.fresh)
+        profile = metrics.query_profile(cache, args.query, year_from, year_to,
+                                        base_series=base if not base_degraded else None,
+                                        fresh=args.fresh)
+        topics, _ = metrics.openalex_topic_shares(
+            cache, args.query,
+            extra_filter=f"publication_year:{year_from}-{year_to}", fresh=args.fresh)
+        matched, _ = metrics.openalex_topics_lookup(cache, args.query, fresh=args.fresh)
+        _ledger_append(args.ledger, {"event": "topic-trends", "query": args.query,
+                                     "total_works": profile.get("total_works")})
+        _flush_request_counts(args.ledger)
+        _write_json(args.out, {
+            "query": args.query,
+            "executed_at": _now(),
+            "profile": profile,
+            "diversity": {
+                "rao_stirling": metrics.rao_stirling(topics) if topics else None,
+                "top_topics": [{"id": t["id"], "name": t["name"], "share": t["share"]}
+                               for t in topics[:10]],
+            },
+            "matched_topics": matched,
+        })
+        return 0
+    finally:
+        cache.close()
+
+
+def _load_gaps(path: str) -> list[dict]:
+    data = metrics.load_json(path)
+    gaps = data.get("gaps") if isinstance(data, dict) else data
+    return [g for g in (gaps or []) if isinstance(g, dict)]
+
+
+def cmd_gap_metrics(args) -> int:
+    cache = http.Cache()
+    try:
+        gaps = _load_gaps(args.gaps)
+        if not gaps:
+            http.eprint(f"no gaps found in {args.gaps}")
+            return 2
+        year_from, year_to = _default_window(args)
+        corpus_by_id = {}
+        if args.corpus:
+            for p in (metrics.load_json(args.corpus).get("papers") or []):
+                if p.get("id"):
+                    corpus_by_id[p["id"]] = p
+        base, base_degraded = metrics.base_yearly(cache, year_from, year_to,
+                                                  fresh=args.fresh)
+        out = []
+        for gap in gaps:
+            m = metrics.compute_gap_metrics(
+                cache, gap, year_from, year_to,
+                base_series=base if not base_degraded else None,
+                corpus_by_id=corpus_by_id, fresh=args.fresh)
+            out.append(m)
+            _ledger_append(args.ledger, {"event": "gap-metrics", "gap_id": m["gap_id"],
+                                         "total_works": m["crowding"]["total_works"]})
+        _flush_request_counts(args.ledger)
+        _write_json(args.out, {"executed_at": _now(), "window": [year_from, year_to],
+                               "gap_count": len(out),
+                               **({"base_degraded": base_degraded} if base_degraded else {}),
+                               "metrics": out})
+        return 0
+    finally:
+        cache.close()
+
+
+def _as_gap_map(path: str | None) -> dict:
+    """Accept {gid: {...}} or {"gaps": {gid: {...}}} or [{"gap_id": ...}]."""
+    if not path:
+        return {}
+    data = metrics.load_json(path)
+    if isinstance(data, dict) and isinstance(data.get("gaps"), (dict, list)):
+        data = data["gaps"]
+    if isinstance(data, list):
+        return {g.get("gap_id"): g for g in data if isinstance(g, dict)}
+    return data if isinstance(data, dict) else {}
+
+
+_SCORE_COLUMNS = ("novelty", "importance", "answerability", "actionability",
+                  "momentum", "headroom", "corroboration", "bridge",
+                  "review_deficit", "accessibility")
+
+
+def _leaderboard_md(ranked: list[dict], weights: dict, window) -> str:
+    lines = [
+        "# Ranked research gaps",
+        "",
+        f"Window {window[0]}–{window[1]}. GapScore = 100 × weighted geometric mean of "
+        "the sub-scores (a near-zero core criterion cannot be compensated away). "
+        "Quantitative sub-scores are normalized **across this gap set** — they are "
+        "relative, not absolute. `rank range` shows rank stability under ±25% "
+        "one-at-a-time weight perturbation.",
+        "",
+        "Weights: " + ", ".join(f"{k} {v:.2f}" for k, v in weights.items()) + ".",
+        "",
+        "| # | Gap | Type | GapScore | Rank range | Survival |",
+        "|---|---|---|---|---|---|",
+    ]
+    for i, g in enumerate(ranked, 1):
+        rng = (f"{g.get('rank_min')}–{g.get('rank_max')}"
+               if g.get("rank_min") is not None else "—")
+        statement = (g.get("statement") or "")[:100]
+        lines.append(f"| {i} | **{g['gap_id']}** {statement} | {g.get('type') or '—'} | "
+                     f"{g['gap_score']} | {rng} | {g['survival']} |")
+    lines += ["", "## Scorecards", ""]
+    for i, g in enumerate(ranked, 1):
+        lines.append(f"### {i}. {g['gap_id']} — GapScore {g['gap_score']}")
+        lines.append("")
+        if g.get("statement"):
+            lines.append(f"> {g['statement']}")
+            lines.append("")
+        subs = g.get("sub_scores") or {}
+        cells = " | ".join(f"{subs[c]:.2f}" if subs.get(c) is not None else "—"
+                           for c in _SCORE_COLUMNS)
+        lines.append("| " + " | ".join(_SCORE_COLUMNS) + " |")
+        lines.append("|" + "---|" * len(_SCORE_COLUMNS))
+        lines.append("| " + cells + " |")
+        lines.append("")
+    excluded = [g for g in ranked if g.get("excluded")]
+    if excluded:
+        lines.append("## Refuted (excluded from ranking)")
+        lines.append("")
+        for g in excluded:
+            lines.append(f"- **{g['gap_id']}** — {g.get('statement') or ''}")
+        lines.append("")
+    return "\n".join(lines) + "\n"
+
+
+def cmd_score_gaps(args) -> int:
+    data = metrics.load_json(args.metrics)
+    metrics_list = data.get("metrics") or []
+    if not metrics_list:
+        http.eprint(f"no metrics found in {args.metrics}")
+        return 2
+    rubric = _as_gap_map(args.rubric)
+    survival = _as_gap_map(args.survival)
+    weights = metrics.load_json(args.weights) if args.weights else None
+    if args.require_survival:
+        missing = [m["gap_id"] for m in metrics_list
+                   if not (survival.get(m["gap_id"]) or {}).get("verdict")]
+        if missing:
+            http.eprint(f"survival gate FAIL: no skeptic verdict for {missing}")
+            return 1
+    scored = metrics.composite_scores(metrics_list, rubric, survival, weights)
+
+    by_id = {m["gap_id"]: m for m in metrics_list}
+    rows = []
+    for gid, res in scored["gaps"].items():
+        m = by_id.get(gid) or {}
+        rows.append({"gap_id": gid, "type": m.get("type"),
+                     "statement": m.get("statement"), **res})
+    active = sorted([r for r in rows if not r["excluded"]],
+                    key=lambda r: (-r["gap_score"], r["gap_id"]))
+    ranked = active + [r for r in rows if r["excluded"]]
+    envelope = {"executed_at": _now(), "window": data.get("window"),
+                "weights": scored["weights"], "ranked": ranked}
+    _write_json(args.out, envelope)
+    if args.leaderboard:
+        os.makedirs(os.path.dirname(os.path.abspath(args.leaderboard)), exist_ok=True)
+        with open(args.leaderboard, "w", encoding="utf-8") as f:
+            f.write(_leaderboard_md(ranked, scored["weights"],
+                                    data.get("window") or ["?", "?"]))
+    return 0
+
+
+# --------------------------------------------------------------------------
 # CLI
 # --------------------------------------------------------------------------
 
@@ -1062,6 +1247,34 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--corpus", required=True)
     common(p)
     p.set_defaults(fn=cmd_audit_report)
+
+    p = sub.add_parser("topic-trends", help="trend/burst/diversity profile of a subject")
+    p.add_argument("query")
+    p.add_argument("--year-from", type=int)
+    p.add_argument("--year-to", type=int)
+    p.add_argument("--ledger", help="append trend events here (JSONL)")
+    common(p)
+    p.set_defaults(fn=cmd_topic_trends)
+
+    p = sub.add_parser("gap-metrics", help="deterministic bibliometrics for mined gaps")
+    p.add_argument("--gaps", required=True, help="gaps.json from the gap-mining phase")
+    p.add_argument("--corpus", help="corpus.json to join supporting-paper metadata")
+    p.add_argument("--year-from", type=int)
+    p.add_argument("--year-to", type=int)
+    p.add_argument("--ledger", help="append per-gap events here (JSONL)")
+    common(p)
+    p.set_defaults(fn=cmd_gap_metrics)
+
+    p = sub.add_parser("score-gaps", help="rank gaps: normalize, weight, leaderboard")
+    p.add_argument("--metrics", required=True, help="gap-metrics.json")
+    p.add_argument("--rubric", help="judge-panel scores per gap (1-5 axes)")
+    p.add_argument("--survival", help="gap-skeptic verdicts per gap")
+    p.add_argument("--require-survival", action="store_true",
+                   help="G4 gate: exit 1 if any gap lacks a skeptic verdict")
+    p.add_argument("--weights", help="JSON weight overrides")
+    p.add_argument("--leaderboard", help="write a markdown leaderboard here")
+    p.add_argument("--out")
+    p.set_defaults(fn=cmd_score_gaps)
 
     p = sub.add_parser("doctor", help="environment preflight")
     p.add_argument("--json", action="store_true")

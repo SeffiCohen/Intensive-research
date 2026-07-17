@@ -12,6 +12,7 @@ a quick `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/scholar.py" doctor --json`):
 | Command | What it does |
 |---|---|
 | `/ir-research <q> [--mode ...] [--intensity ...]` | Multi-agent literature research (research, lit-review, systematic-review, fact-check, brief) |
+| `/ir-ideate <subject> [--intensity ...] [--top <k>]` | Academic ideation: mine + rank research gaps into a skeptic-checked GapScore leaderboard |
 | `/ir-verify <file-or-claim>` | Citation audit of a document, or fact-check of a claim |
 | `/ir-write <target> [--from research/<slug>]` | Corpus-grounded paper/section/abstract writing |
 | `/ir-review <file> [--intensity ...]` | Parallel peer-review panel + editorial decision |

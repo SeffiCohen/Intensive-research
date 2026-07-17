@@ -1,0 +1,18 @@
+{
+  "$comment": "Schema-by-example for research/<slug>/gaps.json (consolidated gaps) and gaps-raw/*.json miner shards (same gap shape, no gap_id yet). Only gap_id, statement, type, queries, supporting are required; bridge/notes are optional.",
+  "gaps": [
+    {
+      "gap_id": "G01",
+      "statement": "No benchmark exists for federated unlearning under non-IID clinical data.",
+      "type": "method",
+      "queries": ["federated unlearning", "machine unlearning clinical"],
+      "bridge": {"a": "machine unlearning", "b": "clinical federated learning"},
+      "supporting": [
+        {"id": "doi:10.1000/example1", "quote": "no standardized benchmark yet exists for unlearning in federated settings", "where": "limitations"},
+        {"id": "doi:10.1000/example2", "quote": "future work should evaluate unlearning under realistic non-IID partitions", "where": "future-work"},
+        {"id": "doi:10.1000/example3", "quote": "", "where": "observed-pattern", "observation": "all 6 unlearning papers in the corpus evaluate on IID CIFAR splits only"}
+      ],
+      "notes": "merged from miner-1 and miner-3 shards; structural bridge candidate confirmed by both"
+    }
+  ]
+}
