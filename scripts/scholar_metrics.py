@@ -218,6 +218,9 @@ def overlap_stats(n_a: int, n_b: int, n_ab: int, n_total: int) -> dict:
         "containment": round(containment, 4) if containment is not None else None,
         "npmi": npmi,
         "bridge_opportunity": opportunity,
+        # A tiny side means the probe phrase barely matches the literature —
+        # downstream judges should trust corpus evidence over these numbers.
+        "weak_side": bool(min(n_a, n_b) < 25),
     }
 
 

@@ -18,7 +18,10 @@ Goal: `ideation-report.md` — the deliverable. Gate G3.
      interpreting the two most extreme metrics;
    - **survival note**: what the skeptic searched, what was closest to
      filling the gap, and why it survived (cite the near-miss papers —
-     they are the related-work seed for whoever picks the gap up);
+     they are the related-work seed for whoever picks the gap up). For a
+     **contested** gap, lead the dossier with the skeptic's *narrowed
+     surviving form* — that sharpened statement is the actual product; show
+     the original statement under it as "as originally mined";
    - **proposed research questions** (from the judges' notes): 1-3 concrete,
      PICO-shaped where applicable, each with a one-line study/method sketch
      and the first dataset or instrument one would reach for;

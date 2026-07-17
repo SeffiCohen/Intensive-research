@@ -58,6 +58,11 @@ Panel medians are computed in code — never average seats yourself.
   Do not let one halo the others.
 - Anchor 3 is the honest default under thin evidence; say "thin evidence"
   in the rationale when you use it.
-- Novelty ratings must respect the skeptic file when present; if the
-  skeptic found near-misses, novelty ≥4 needs an explicit reason the
-  near-misses do not count.
+- Novelty ratings must respect the skeptic file **when present** — panels
+  usually run in parallel with the skeptics, so it often is not; in that
+  case ground novelty ≥4 in the miners' near-miss notes instead, and rely
+  on the survival multiplier (applied in code after both finish) to correct
+  any inflation on gaps the skeptics later refute or contest.
+- Bridge metrics with `weak_side: true` (a probe phrase that barely matches
+  the literature) are unreliable — prefer the corpus observed-pattern
+  evidence over them and say so in the rationale.

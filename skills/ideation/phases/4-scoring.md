@@ -30,7 +30,9 @@ the skeptics below — one per persona seat: `methodologist`, `domain-scholar`,
 ```
 OBJECTIVE: score all candidate gaps for subject "<subject>" — seat <persona>
 WORKSPACE: research/<slug>/
-INPUTS: gaps.json, gap-metrics.json, landscape.json
+INPUTS: gaps.json, gap-metrics.json (may exceed one read — page through it),
+  landscape.json. The skeptic files do not exist yet (skeptics run in
+  parallel with you); ground novelty in the miners' near-miss notes.
 RUBRIC: ${CLAUDE_PLUGIN_ROOT}/skills/ideation/references/gap-rubric.md
 OUTPUT FILE: research/<slug>/rubric/judge-<persona>.json
 BOUNDARIES: score every gap on all four axes with 1-2 sentence rationales;
