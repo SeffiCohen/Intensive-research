@@ -1,0 +1,28 @@
+{
+  "name": "intensive-research",
+  "owner": {
+    "name": "Seffi Cohen",
+    "url": "https://github.com/SeffiCohen"
+  },
+  "metadata": {
+    "description": "Intensive Research — tool-grounded, retraction-aware, multi-agent academic research for Claude Code."
+  },
+  "plugins": [
+    {
+      "name": "intensive-research",
+      "source": "./",
+      "description": "Parallel multi-agent literature research over 10 free scholarly APIs with PRISMA provenance, 100% citation verification at corpus-entry, retraction screening, claim auditing, peer-review panels, and an intensity dial (standard/intensive/exhaustive).",
+      "version": "1.0.0",
+      "license": "CC-BY-NC-4.0",
+      "category": "research",
+      "tags": ["academic", "research", "literature-review", "prisma", "citations"],
+      "skills": [
+        "./skills/intensive-research",
+        "./skills/paper-writing",
+        "./skills/peer-review",
+        "./skills/citation-audit",
+        "./skills/research-pipeline"
+      ]
+    }
+  ]
+}

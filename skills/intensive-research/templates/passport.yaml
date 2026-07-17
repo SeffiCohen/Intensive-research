@@ -1,0 +1,53 @@
+# Material Passport — Intensive Research run ledger
+# Fill in as the run proceeds. Schema: references/passport-spec.md
+spec_version: "1"
+slug: ""
+question: ""
+mode: research          # research | lit-review | systematic-review | fact-check | brief
+intensity: standard     # standard | intensive | exhaustive
+criteria:
+  include: []
+  exclude: []
+created_at: ""
+
+corpus_summary:
+  candidates: 0
+  included: 0
+  excluded_by_reason: {}
+  unclear_no_abstract: 0
+
+verification_summary:
+  total: 0
+  verified: 0
+  single_index: 0
+  unresolvable: 0
+  fabricated: []
+  retracted: []
+  degraded: []
+
+gates:
+  G1a_identification: pending
+  G1b_existence: pending
+  G2_claim_audit: pending
+  G3_final: pending
+
+budget:
+  agents_spawned: 0
+  searcher_spawns: 0
+  api_requests: {}
+  cache_hits: 0
+  wall_seconds: 0
+
+coverage_manifest:
+  searched: []
+  not_searched:
+    - "books / monographs (no full-text API)"
+    - "theses & grey literature"
+    - "patents; standards; clinical-trial registries"
+    - "non-English databases (no ToS-clean API)"
+    - "subscription indexes (Scopus, Web of Science)"
+    - "Google Scholar (no API; ToS prohibits automation)"
+  language_scope: "English-first"
+  notes: ""
+
+degradations: []
