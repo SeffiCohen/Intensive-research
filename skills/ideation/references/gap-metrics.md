@@ -43,9 +43,16 @@ generated optimism):
 
 ## Aggregation (in code — `score-gaps`)
 
-- **Weighted geometric mean** × 100, sub-scores floored at 0.05: a gap
-  near-zero on any core axis cannot win on the others (multiplicative MCDA,
-  consistent with CHNRI's intent that priorities clear every criterion).
+- **Weighted geometric mean** × 100, sub-scores floored at 0.05. This is a
+  deliberate departure from CHNRI's Research Priority Score, which is a
+  weighted *arithmetic* mean and therefore fully compensatory — a weakness
+  the MCDA literature (ISPOR task force) flags explicitly. Geometric
+  aggregation means a gap near-zero on any core axis cannot win on the
+  others; the 0.05 floor keeps a single zero from annihilating the product.
+- **Panel agreement** (adapted from CHNRI's Average Expert Agreement) is
+  computed in code from the judge panel's score spread and reported beside
+  every rank: a top gap with low agreement is a judgment call, not a
+  consensus, and the report must say so.
 - Quantitative sub-scores are **min-max normalized across the run's gap
   set**: scores are relative to the sibling candidates, not absolute.
 - **Survival multiplier** from the skeptic: survived ×1.0, contested ×0.6,

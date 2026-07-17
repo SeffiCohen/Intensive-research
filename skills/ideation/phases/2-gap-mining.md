@@ -39,8 +39,10 @@ two literatures that should intersect but barely do.
    field vs this subject's problem, two subtopics whose combination would
    answer an obvious question).
 3. For each pair run a quick co-occurrence probe:
-   `scholar.py search '"<a>" "<b>"' --sources openalex --limit 5` — if the
-   intersection looks thin but both sides are substantial, add a candidate gap
+   `scholar.py count '"<a>" AND "<b>"'` vs `scholar.py count '"<a>"'` and
+   `'"<b>"'` (then `search '"<a>" "<b>"' --limit 5` to eyeball the
+   intersection) — if the intersection is thin but both sides are
+   substantial, add a candidate gap
    of `type: bridge` with `bridge: {a, b}` to
    `research/<slug>/gaps-raw/structural.json` (same schema; supporting papers =
    corpus papers representing each side). Phase 4 computes the real

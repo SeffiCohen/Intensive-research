@@ -205,14 +205,19 @@ def overlap_stats(n_a: int, n_b: int, n_ab: int, n_total: int) -> dict:
         denom = -math.log(pab)
         if denom > 0:
             npmi = round(math.log(pab / (pa * pb)) / denom, 4)
-    size = math.log1p(min(n_a, n_b)) / math.log1p(max(n_total, 2)) if n_total else 0.0
-    sparsity = 1 - (containment or 0.0)
+    if min(n_a, n_b) == 0 or not n_total:
+        # An empty side means the probe phrase matched nothing — the bridge is
+        # unmeasurable, not maximally open. None keeps it out of normalization.
+        opportunity = None
+    else:
+        size = math.log1p(min(n_a, n_b)) / math.log1p(max(n_total, 2))
+        opportunity = round((1 - (containment or 0.0)) * size, 4)
     return {
         "n_a": n_a, "n_b": n_b, "n_ab": n_ab,
         "jaccard": round(jaccard, 5) if jaccard is not None else None,
         "containment": round(containment, 4) if containment is not None else None,
         "npmi": npmi,
-        "bridge_opportunity": round(sparsity * size, 4),
+        "bridge_opportunity": opportunity,
     }
 
 
@@ -530,13 +535,22 @@ def compute_gap_metrics(cache, gap: dict, year_from: int, year_to: int,
     bridge = None
     br = gap.get("bridge") or {}
     if br.get("a") and br.get("b"):
-        n_total, _ = openalex_count(cache, None,
-                                    extra_filter=f"publication_year:{year_from}-{year_to}",
-                                    fresh=fresh)
         window = f"publication_year:{year_from}-{year_to}"
-        n_a, _ = openalex_count(cache, f'"{br["a"]}"', extra_filter=window, fresh=fresh)
-        n_b, _ = openalex_count(cache, f'"{br["b"]}"', extra_filter=window, fresh=fresh)
-        n_ab, _ = openalex_count(cache, f'"{br["a"]}" AND "{br["b"]}"',
+        n_total, _ = openalex_count(cache, None, extra_filter=window, fresh=fresh)
+
+        def side_count(term):
+            # Exact phrase first; a compound side that phrase-matches nothing
+            # falls back to unquoted AND-token search. Returns the count and
+            # the form that produced it, so the intersection query matches.
+            n, _ = openalex_count(cache, f'"{term}"', extra_filter=window, fresh=fresh)
+            if n:
+                return n, f'"{term}"'
+            n, _ = openalex_count(cache, term, extra_filter=window, fresh=fresh)
+            return n, term
+
+        n_a, form_a = side_count(br["a"])
+        n_b, form_b = side_count(br["b"])
+        n_ab, _ = openalex_count(cache, f"({form_a}) AND ({form_b})",
                                  extra_filter=window, fresh=fresh)
         if None not in (n_a, n_b, n_ab):
             bridge = overlap_stats(n_a, n_b, n_ab, n_total or 0)
@@ -691,6 +705,24 @@ def rubric_to_scores(rubric_entry: dict) -> dict:
     return out
 
 
+def panel_agreement(rubric_entry: dict) -> float | None:
+    """CHNRI-AEA-inspired agreement across a judge panel, in [0,1].
+
+    For each axis scored by ≥2 judges, disagreement is the score spread over
+    the 1-5 range; agreement = 1 − mean spread. None without panel lists.
+    A low value flags a rank built on judges who did not agree."""
+    spreads = []
+    for axis in ("novelty", "importance", "answerability", "actionability"):
+        v = rubric_entry.get(axis)
+        if isinstance(v, (list, tuple)):
+            vals = [float(x) for x in v if x is not None]
+            if len(vals) >= 2:
+                spreads.append((max(vals) - min(vals)) / 4)
+    if not spreads:
+        return None
+    return round(1 - sum(spreads) / len(spreads), 3)
+
+
 def composite_scores(metrics_list: list[dict], rubric: dict, survival: dict,
                      weights: dict | None = None) -> dict:
     """Full scoring pass: sub-scores, composite, survival, rank sensitivity."""
@@ -718,6 +750,7 @@ def composite_scores(metrics_list: list[dict], rubric: dict, survival: dict,
             "survival": verdict,
             "gap_score": round(100 * (raw or 0) * mult, 1),
             "excluded": mult == 0,
+            "panel_agreement": panel_agreement(rubric.get(gid) or {}),
             **(sens.get(gid) or {}),
         }
     return {"weights": weights, "gaps": results}

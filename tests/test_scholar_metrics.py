@@ -96,6 +96,12 @@ def test_overlap_stats_zero_intersection():
     assert s["bridge_opportunity"] > 0
 
 
+def test_overlap_stats_empty_side_is_unmeasurable_not_open():
+    s = sm.overlap_stats(4037, 0, 0, 1_000_000)
+    assert s["bridge_opportunity"] is None  # probe matched nothing ≠ open field
+    assert sm.overlap_stats(10, 10, 5, 0)["bridge_opportunity"] is None
+
+
 def test_sleeping_beauty():
     # Dormant then spike: line from (0,0) to (4,10) vs flat zeros.
     series = [(2000, 0), (2001, 0), (2002, 0), (2003, 0), (2004, 10)]
@@ -132,6 +138,17 @@ def test_rank_sensitivity_stable_when_order_is_clear():
     sens = sm.rank_sensitivity(gaps, {"a": 0.5, "b": 0.5})
     assert sens["G1"] == {"rank": 1, "rank_min": 1, "rank_max": 1}
     assert sens["G2"]["rank"] == 2
+
+
+def test_panel_agreement_from_score_spread():
+    full = {"novelty": [4, 4, 4], "importance": [3, 3, 3],
+            "answerability": [5, 5, 5], "actionability": [2, 2, 2]}
+    split = {"novelty": [1, 5], "importance": [1, 5],
+             "answerability": [1, 5], "actionability": [1, 5]}
+    assert sm.panel_agreement(full) == 1.0
+    assert sm.panel_agreement(split) == 0.0
+    assert sm.panel_agreement({"novelty": 4}) is None  # no panel, no agreement
+    assert sm.panel_agreement({"novelty": [4, 3]}) == 0.75
 
 
 def test_rubric_panel_lists_take_median_in_code():

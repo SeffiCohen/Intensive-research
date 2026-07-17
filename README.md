@@ -63,7 +63,9 @@ to `/ir-research "your question"`.
   limits and is **required for Unpaywall** full-text resolution. Everything
   else works keyless.
 - Optional: `NCBI_API_KEY` (PubMed 3→10 rps), `S2_API_KEY` (adds Semantic
-  Scholar as a third verification vote).
+  Scholar as a third verification vote), `OPENALEX_API_KEY` (free at
+  openalex.org/settings/api — recommended since OpenAlex's Feb-2026
+  credit model; keyless requests still work at low volume).
 
 Cross-platform: rate limiting and caching use SQLite (no `fcntl`), so
 concurrent subagents coordinate correctly on **Linux, macOS, and Windows**.

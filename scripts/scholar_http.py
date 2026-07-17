@@ -72,6 +72,13 @@ def mailto() -> str | None:
     return os.environ.get("IR_MAILTO") or None
 
 
+def openalex_key() -> str | None:
+    """OpenAlex API key (free at openalex.org/settings/api). Required by the
+    Feb-2026 OpenAlex credit model for sustained use; requests still work
+    keyless at low volume."""
+    return os.environ.get("OPENALEX_API_KEY") or os.environ.get("IR_OPENALEX_KEY") or None
+
+
 def cache_dir() -> str:
     override = os.environ.get("IR_CACHE_DIR")
     if override:
@@ -320,10 +327,18 @@ def fetch(
     with_cred, anon = RATE_TABLE[host]
     has_cred = bool(
         mailto()
+        or (host == "api.openalex.org" and openalex_key())
         or (host == "eutils.ncbi.nlm.nih.gov" and os.environ.get("NCBI_API_KEY"))
         or (host == "api.semanticscholar.org" and os.environ.get("S2_API_KEY"))
     )
     interval = with_cred if has_cred else anon
+
+    # The api_key is appended at request time only — the cache stays keyed on
+    # the keyless URL so entries survive key rotation and never store the key.
+    request_url = url
+    if host == "api.openalex.org" and openalex_key() and "api_key=" not in url:
+        sep = "&" if "?" in url else "?"
+        request_url = f"{url}{sep}api_key={urllib.parse.quote(openalex_key())}"
 
     req_headers = {"User-Agent": _user_agent(), "Accept": accept}
     if headers:
@@ -333,7 +348,7 @@ def fetch(
     for attempt in range(_MAX_RETRIES + 1):
         cache.acquire_slot(host, interval)
         REQUEST_COUNTS["requests"][host] = REQUEST_COUNTS["requests"].get(host, 0) + 1
-        req = urllib.request.Request(url, data=data, headers=req_headers, method=method)
+        req = urllib.request.Request(request_url, data=data, headers=req_headers, method=method)
         try:
             with urllib.request.urlopen(req, timeout=timeout, context=_ssl_context()) as resp:
                 body = resp.read()

@@ -12,9 +12,12 @@ Walk the user through setup:
    lifts OpenAlex/Crossref rate tiers and is REQUIRED for Unpaywall full-text
    resolution. Suggest adding `export IR_MAILTO=<their email>` to their shell
    profile, or `"env": {"IR_MAILTO": "..."}` in `.claude/settings.json`.
-3. **Optional keys**: `NCBI_API_KEY` (PubMed 3→10 rps; free at
-   ncbi.nlm.nih.gov/account), `S2_API_KEY` (enables Semantic Scholar as a third
-   verification vote; free request form at semanticscholar.org/product/api).
+3. **Optional keys**: `OPENALEX_API_KEY` (free at openalex.org/settings/api;
+   recommended for sustained use under OpenAlex's 2026 credit model —
+   keyless still works at low volume), `NCBI_API_KEY` (PubMed 3→10 rps; free
+   at ncbi.nlm.nih.gov/account), `S2_API_KEY` (enables Semantic Scholar as a
+   third verification vote; free request form at
+   semanticscholar.org/product/api).
 4. **Retraction database**: offer to run
    `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/scholar.py" cache load-retractions`
    now (~68k records, one-time, refreshes weekly on use).

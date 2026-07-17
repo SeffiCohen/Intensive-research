@@ -34,6 +34,7 @@ intensity scales breadth, never integrity. Details:
 ## Environment
 
 - `IR_MAILTO` — polite-pool email (recommended; required for Unpaywall)
+- `OPENALEX_API_KEY` — free key, recommended for sustained OpenAlex use
 - `NCBI_API_KEY`, `S2_API_KEY` — optional rate/coverage upgrades
 - `IR_CACHE_DIR` — cache location override
 - Everything works keyless; sources degrade per-API, never fatally.

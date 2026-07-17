@@ -1,5 +1,5 @@
 {
-  "$comment": "Schema-by-example for research/<slug>/gaps.json (consolidated gaps) and gaps-raw/*.json miner shards (same gap shape, no gap_id yet). Only gap_id, statement, type, queries, supporting are required; bridge/notes are optional.",
+  "$comment": "Schema-by-example for research/<slug>/gaps.json (consolidated gaps) and gaps-raw/*.json miner shards (same gap shape, no gap_id yet). Only gap_id, statement, type, queries, supporting are required; bridge/notes are optional. bridge.a and bridge.b MUST be short searchable phrases (2-4 words, the literature's own vocabulary, no slashes or 'and') — they are used verbatim as search terms by gap-metrics; a descriptive label that matches no works zeroes the bridge signal.",
   "gaps": [
     {
       "gap_id": "G01",

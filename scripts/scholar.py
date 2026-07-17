@@ -15,6 +15,7 @@ Subcommands:
   ingest        resolve a plain list of DOIs/arXiv ids into papers
   export        corpus -> bibtex | ris | csv | csl-json
   audit-report  deterministic G3 gate over a report's citation markers
+  count         total OpenAlex hits for a query (bridge thinness probe)
   topic-trends  trend/burst/diversity profile of a subject (ideation phase 1)
   gap-metrics   deterministic bibliometric metrics for mined gaps
   score-gaps    normalize + weight metrics into ranked GapScores + leaderboard
@@ -992,6 +993,21 @@ def _default_window(args) -> tuple[int, int]:
     return year_from, year_to
 
 
+def cmd_count(args) -> int:
+    """Total OpenAlex hit count for a query — the cheap thinness probe."""
+    cache = http.Cache()
+    try:
+        extra = f"publication_year:{args.year_from}-{args.year_to}" \
+            if args.year_from and args.year_to else None
+        n, degraded = metrics.openalex_count(cache, args.query, extra_filter=extra,
+                                             fresh=args.fresh)
+        _write_json(args.out, {"query": args.query, "count": n,
+                               **({"degraded": degraded} if degraded else {})})
+        return 0 if n is not None else 1
+    finally:
+        cache.close()
+
+
 def cmd_topic_trends(args) -> int:
     cache = http.Cache()
     try:
@@ -1093,15 +1109,17 @@ def _leaderboard_md(ranked: list[dict], weights: dict, window) -> str:
         "",
         "Weights: " + ", ".join(f"{k} {v:.2f}" for k, v in weights.items()) + ".",
         "",
-        "| # | Gap | Type | GapScore | Rank range | Survival |",
-        "|---|---|---|---|---|---|",
+        "| # | Gap | Type | GapScore | Rank range | Panel agreement | Survival |",
+        "|---|---|---|---|---|---|---|",
     ]
     for i, g in enumerate(ranked, 1):
         rng = (f"{g.get('rank_min')}–{g.get('rank_max')}"
                if g.get("rank_min") is not None else "—")
+        agree = g.get("panel_agreement")
         statement = (g.get("statement") or "")[:100]
         lines.append(f"| {i} | **{g['gap_id']}** {statement} | {g.get('type') or '—'} | "
-                     f"{g['gap_score']} | {rng} | {g['survival']} |")
+                     f"{g['gap_score']} | {rng} | "
+                     f"{agree if agree is not None else '—'} | {g['survival']} |")
     lines += ["", "## Scorecards", ""]
     for i, g in enumerate(ranked, 1):
         lines.append(f"### {i}. {g['gap_id']} — GapScore {g['gap_score']}")
@@ -1247,6 +1265,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--corpus", required=True)
     common(p)
     p.set_defaults(fn=cmd_audit_report)
+
+    p = sub.add_parser("count", help="total OpenAlex hits for a query (thinness probe)")
+    p.add_argument("query")
+    p.add_argument("--year-from", type=int)
+    p.add_argument("--year-to", type=int)
+    common(p)
+    p.set_defaults(fn=cmd_count)
 
     p = sub.add_parser("topic-trends", help="trend/burst/diversity profile of a subject")
     p.add_argument("query")

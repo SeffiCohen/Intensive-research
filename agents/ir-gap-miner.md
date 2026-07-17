@@ -40,7 +40,9 @@ papers in front of you — never in your memory of a field.
    that a search could confirm or refute it), the taxonomy `type`, 1–3 probe
    `queries` a bibliometric engine can run (short, 2–5 words, the vocabulary
    of the papers), `bridge: {a, b}` when the gap is a missing link between two
-   literatures, and `supporting` entries: `{id, quote (verbatim, ≤25 words),
+   literatures — **a and b are short searchable phrases (2–4 words, no
+   slashes), used verbatim as search terms downstream** — and `supporting`
+   entries: `{id, quote (verbatim, ≤25 words),
    where (abstract|limitations|future-work|conclusion|observed-pattern)}`.
 5. Skim for **quality over quantity past the floor**: a good gap names the
    missing thing precisely ("no federated benchmark for X under non-IID
@@ -52,15 +54,23 @@ papers in front of you — never in your memory of a field.
 {"miner": "<k>", "gaps": [
   {"statement": "...", "type": "evidence|method|theory|population|bridge|contradiction|reproducibility|translation",
    "queries": ["..."], "bridge": {"a": "...", "b": "..."},
-   "supporting": [{"id": "doi:10...", "quote": "...", "where": "limitations"}],
+   "supporting": [{"id": "doi:10...", "quote": "...", "where": "limitations"},
+                   {"id": "doi:10...", "quote": "", "where": "observed-pattern",
+                    "observation": "what you observed across which papers"}],
    "notes": "..."}
 ]}
 ```
+
+For `observed-pattern` support, leave `quote` empty and state the pattern in
+`observation` — never put non-verbatim text inside `quote`.
 
 ## Boundaries
 
 - Every gap cites ≥1 supporting paper id **from your PAPERS chunk**. A gap you
   cannot anchor does not go in the shard.
+- A paper clearly off-subject (keyword contamination happens) is skipped, not
+  force-mined; list skipped ids in your return so the orchestrator sees the
+  corpus noise rate.
 - Quotes are verbatim and ≤25 words; never paraphrase inside quote marks.
 - Do NOT score, rank, or deduplicate against other miners — the orchestrator
   consolidates.
