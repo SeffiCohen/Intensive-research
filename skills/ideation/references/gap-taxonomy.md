@@ -35,6 +35,10 @@ patterns rather than quotes.
 
 - Choose the **most specific** type that fits; `bridge` beats `population`
   when the essence is an untested pairing.
+- Expect extreme class imbalance and do not fight it: in Müller-Bloch &
+  Kranz's coding of 555 gaps across 40 IS reviews, ~84% were knowledge
+  voids. A miner shard dominated by `evidence`/`theory`-style voids is
+  normal; never force artificial type diversity.
 - The type is not a score — a `translation` gap is not inherently worth less
   than a `theory` gap; the metrics and the panel decide value.
 - A statement too vague to type ("more research is needed on X") is not a

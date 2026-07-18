@@ -1107,7 +1107,16 @@ def _leaderboard_md(ranked: list[dict], weights: dict, window) -> str:
         "relative, not absolute. `rank range` shows rank stability under ±25% "
         "one-at-a-time weight perturbation.",
         "",
-        "Weights: " + ", ".join(f"{k} {v:.2f}" for k, v in weights.items()) + ".",
+    ]
+    if "default" in weights:
+        lines.append("Weights (default): " +
+                     ", ".join(f"{k} {v:.2f}" for k, v in weights["default"].items()) + ".")
+        for t, ov in (weights.get("by_type") or {}).items():
+            lines.append(f"Type-conditioned for `{t}`: " +
+                         ", ".join(f"{k} {v:.2f}" for k, v in ov.items()) + ".")
+    else:
+        lines.append("Weights: " + ", ".join(f"{k} {v:.2f}" for k, v in weights.items()) + ".")
+    lines += [
         "",
         "| # | Gap | Type | GapScore | Rank range | Panel agreement | Survival |",
         "|---|---|---|---|---|---|---|",

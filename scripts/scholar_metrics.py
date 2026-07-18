@@ -294,25 +294,32 @@ def weighted_geometric(scores: dict, weights: dict, eps: float = 0.05) -> float 
 def rank_sensitivity(per_gap_scores: dict, weights: dict, perturb: float = 0.25) -> dict:
     """One-at-a-time weight perturbation → rank range per gap.
 
-    per_gap_scores: {gap_id: {metric: score01}}. Returns
-    {gap_id: {"rank": r, "rank_min": .., "rank_max": ..}} — a wide range means
+    per_gap_scores: {gap_id: {metric: score01}}. weights is either one flat
+    vector applied to every gap, or {gap_id: vector} for type-conditioned
+    weighting (each axis is perturbed simultaneously in every gap's vector).
+    Returns {gap_id: {"rank", "rank_min", "rank_max"}} — a wide range means
     the ranking is a weight artifact, not a signal.
     """
-    def ranks(w):
-        comp = {g: weighted_geometric(s, w) or 0.0 for g, s in per_gap_scores.items()}
+    per_gap = (weights if weights and all(isinstance(v, dict) for v in weights.values())
+               else {g: weights for g in per_gap_scores})
+
+    def ranks(scale_key=None, factor=1.0):
+        comp = {}
+        for g, s in per_gap_scores.items():
+            w = per_gap.get(g) or {}
+            if scale_key is not None and w.get(scale_key):
+                w = dict(w, **{scale_key: w[scale_key] * factor})
+            comp[g] = weighted_geometric(s, w) or 0.0
         ordered = sorted(comp, key=lambda g: (-comp[g], g))
         return {g: i + 1 for i, g in enumerate(ordered)}
 
-    base = ranks(weights)
+    base = ranks()
     lo = {g: r for g, r in base.items()}
     hi = {g: r for g, r in base.items()}
-    for key in weights:
-        if weights[key] <= 0:
-            continue
+    axes = {k for w in per_gap.values() for k, v in w.items() if v > 0}
+    for key in sorted(axes):
         for factor in (1 - perturb, 1 + perturb):
-            w2 = dict(weights)
-            w2[key] = weights[key] * factor
-            for g, r in ranks(w2).items():
+            for g, r in ranks(key, factor).items():
                 lo[g] = min(lo[g], r)
                 hi[g] = max(hi[g], r)
     return {g: {"rank": base[g], "rank_min": lo[g], "rank_max": hi[g]} for g in base}
@@ -618,7 +625,8 @@ def compute_gap_metrics(cache, gap: dict, year_from: int, year_to: int,
 # Default weights. Quantitative axes (0.50) come from the bibliometric
 # signals; qualitative axes (0.50) from the judge-panel rubric (CHNRI-derived:
 # novelty, importance, answerability, actionability). Override with a JSON
-# file via score-gaps --weights.
+# file via score-gaps --weights. Only relative magnitudes matter — the
+# geometric mean renormalizes by the weight sum.
 DEFAULT_WEIGHTS = {
     "momentum": 0.10,
     "headroom": 0.08,
@@ -631,6 +639,39 @@ DEFAULT_WEIGHTS = {
     "answerability": 0.12,
     "actionability": 0.08,
 }
+
+# Type-conditioned overrides: the axis that *defines* a gap type carries more
+# weight for gaps of that type (no single global vector — different gap types
+# are valuable for different reasons). Rationale in
+# skills/ideation/references/gap-metrics.md.
+TYPE_WEIGHT_OVERRIDES = {
+    "bridge": {"bridge": 0.15, "headroom": 0.06},
+    "evidence": {"review_deficit": 0.10, "momentum": 0.08},
+    "contradiction": {"importance": 0.18, "novelty": 0.12},
+    "translation": {"importance": 0.18, "actionability": 0.11},
+    "reproducibility": {"answerability": 0.15, "momentum": 0.07},
+}
+
+
+def resolve_weights(spec, gap_type: str | None) -> dict:
+    """Effective weight vector for one gap.
+
+    spec=None            → DEFAULT_WEIGHTS ⊕ built-in per-type override.
+    flat {axis: w} spec  → used exactly as given (user takes full control).
+    {"default", "by_type"} spec → DEFAULT_WEIGHTS ⊕ default ⊕ by_type[type]
+                           (the spec's by_type replaces the built-ins).
+    """
+    if spec and not ("default" in spec or "by_type" in spec):
+        return dict(spec)
+    base = dict(DEFAULT_WEIGHTS)
+    by_type = TYPE_WEIGHT_OVERRIDES
+    if spec:
+        base.update(spec.get("default") or {})
+        if "by_type" in spec:
+            by_type = spec.get("by_type") or {}
+    base.update(by_type.get(gap_type or "", {}))
+    return base
+
 
 SURVIVAL_MULTIPLIER = {"survived": 1.0, "contested": 0.6, "refuted": 0.0}
 
@@ -728,26 +769,29 @@ def panel_agreement(rubric_entry: dict) -> float | None:
 
 def composite_scores(metrics_list: list[dict], rubric: dict, survival: dict,
                      weights: dict | None = None) -> dict:
-    """Full scoring pass: sub-scores, composite, survival, rank sensitivity."""
-    weights = dict(weights or DEFAULT_WEIGHTS)
+    """Full scoring pass: sub-scores, type-conditioned composite, survival,
+    rank sensitivity."""
     quant = quantitative_scores(metrics_list)
     per_gap: dict[str, dict] = {}
+    gap_weights: dict[str, dict] = {}
     for m in metrics_list:
         gid = m["gap_id"]
         scores = dict(quant[gid])
         scores.update(rubric_to_scores(rubric.get(gid) or {}))
         per_gap[gid] = scores
+        gap_weights[gid] = resolve_weights(weights, m.get("type"))
 
     survivors = {g: s for g, s in per_gap.items()
                  if SURVIVAL_MULTIPLIER.get((survival.get(g) or {}).get("verdict",
                                             "survived"), 1.0) > 0}
-    sens = rank_sensitivity(survivors, weights) if survivors else {}
+    sens = (rank_sensitivity(survivors, {g: gap_weights[g] for g in survivors})
+            if survivors else {})
 
     results = {}
     for gid, scores in per_gap.items():
         verdict = (survival.get(gid) or {}).get("verdict", "survived")
         mult = SURVIVAL_MULTIPLIER.get(verdict, 1.0)
-        raw = weighted_geometric(scores, weights)
+        raw = weighted_geometric(scores, gap_weights[gid])
         results[gid] = {
             "sub_scores": scores,
             "survival": verdict,
@@ -756,7 +800,15 @@ def composite_scores(metrics_list: list[dict], rubric: dict, survival: dict,
             "panel_agreement": panel_agreement(rubric.get(gid) or {}),
             **(sens.get(gid) or {}),
         }
-    return {"weights": weights, "gaps": results}
+    used_types = sorted({m.get("type") for m in metrics_list if m.get("type")})
+    weights_out = {
+        "default": resolve_weights(weights, None),
+        "by_type": {t: ov for t, ov in
+                    {t: {k: v for k, v in resolve_weights(weights, t).items()
+                         if resolve_weights(weights, None).get(k) != v}
+                     for t in used_types}.items() if ov},
+    }
+    return {"weights": weights_out, "gaps": results}
 
 
 def load_json(path: str):

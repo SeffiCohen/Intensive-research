@@ -65,6 +65,9 @@ When finished, create research/<slug>/survival/<gap_id>.done
 
 Merge all `survival/*.json` into `research/<slug>/survival.json`
 (`{"gaps": {"G01": {"verdict": ..., "reason": ..., "evidence": [...]}}}`).
+Evidence entries with `role: restater` are fresh demand evidence the miners
+never saw — carry them into the report's corroboration line for that gap
+("+N independent restatements found during the survival check").
 
 ## 4. Composite scoring — gate G4 (code)
 

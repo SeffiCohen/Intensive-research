@@ -33,7 +33,10 @@ Goal: `ideation-report.md` — the deliverable. Gate G3.
 5. **Candidate surplus appendix**: gaps beyond the tier cap, one line each.
 6. **Coverage manifest + Run Receipt**: what was not searched (sources
    outside the API set, grey literature, non-English), window, ledger counts,
-   cache hits, agents spawned.
+   cache hits, agents spawned. For clinical/biomedical subjects, state that
+   trial registries (ClinicalTrials.gov, PROSPERO, OSF) were NOT checked —
+   a top gap may have an in-flight registered study — and recommend a manual
+   registry check before committing to any gap.
 
 ## Gate G3 (code)
 

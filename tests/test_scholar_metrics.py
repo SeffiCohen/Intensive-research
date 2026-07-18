@@ -179,6 +179,43 @@ def _metric_stub(gid, total_works, cagr_v, n_supporting, bridge_opp=None):
     }
 
 
+def test_resolve_weights_precedence():
+    # No spec: defaults + built-in type override.
+    w = sm.resolve_weights(None, "bridge")
+    assert w["bridge"] == sm.TYPE_WEIGHT_OVERRIDES["bridge"]["bridge"]
+    assert w["novelty"] == sm.DEFAULT_WEIGHTS["novelty"]
+    assert sm.resolve_weights(None, "method") == sm.DEFAULT_WEIGHTS
+    # Flat spec: used exactly, type conditioning off.
+    flat = {"novelty": 0.9, "importance": 0.1}
+    assert sm.resolve_weights(flat, "bridge") == flat
+    # Structured spec: default overlay + custom by_type replaces built-ins.
+    spec = {"default": {"novelty": 0.2}, "by_type": {"theory": {"importance": 0.5}}}
+    w = sm.resolve_weights(spec, "theory")
+    assert w["novelty"] == 0.2 and w["importance"] == 0.5
+    assert sm.resolve_weights(spec, "bridge")["bridge"] == sm.DEFAULT_WEIGHTS["bridge"]
+
+
+def test_type_conditioned_weights_change_ranking():
+    # Identical gaps except type: the bridge-typed one has a strong bridge
+    # signal that only counts extra under its type-conditioned weights.
+    a = _metric_stub("GA", 1000, 0.2, 3, bridge_opp=0.9)
+    b = _metric_stub("GB", 1000, 0.2, 3, bridge_opp=0.9)
+    a["type"] = "bridge"
+    b["type"] = "method"
+    rubric = {g: {"novelty": 3, "importance": 3, "answerability": 3, "actionability": 3}
+              for g in ("GA", "GB")}
+    out = sm.composite_scores([a, b], rubric, survival={})
+    assert "bridge" in out["weights"]["by_type"]
+    assert out["weights"]["by_type"]["bridge"]["bridge"] == 0.15
+
+
+def test_rank_sensitivity_accepts_per_gap_weights():
+    gaps = {"G1": {"a": 0.9, "b": 0.2}, "G2": {"a": 0.2, "b": 0.9}}
+    per_gap = {"G1": {"a": 0.8, "b": 0.2}, "G2": {"a": 0.2, "b": 0.8}}
+    sens = sm.rank_sensitivity(gaps, per_gap)
+    assert {sens["G1"]["rank"], sens["G2"]["rank"]} == {1, 2}
+
+
 def test_composite_scores_ranks_hot_uncrowded_corroborated_gap_first():
     metrics_list = [
         _metric_stub("G1", total_works=200, cagr_v=0.5, n_supporting=8, bridge_opp=0.8),

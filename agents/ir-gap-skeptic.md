@@ -31,12 +31,17 @@ surviving you.
      --sources openalex,arxiv,europepmc,crossref --limit 15 \
      --ledger <LEDGER FILE> --out <WORKSPACE>/survival/tmp-<gap>-<n>.json
    ```
-2. Snowball the closest hit: `scholar.py cites` on the nearest-miss paper —
-   if anyone filled the gap, they cite the near-miss.
+2. **Forward-citation attack** (the highest-yield move — Müller-Bloch &
+   Kranz's verification step): run `scholar.py cites` on 1–2 of the gap's
+   SUPPORTING papers. Anyone who filled the gap almost certainly cites the
+   papers that declared it. Also snowball the closest hit you find.
 3. Read the candidates' titles + abstracts and judge against the gap
    statement, precisely: a paper kills the gap only if it does the specific
    missing thing (same question, same population/setting, same method class).
-   Adjacent work narrows a gap; it does not fill it.
+   Adjacent work narrows a gap; it does not fill it. Classify every relevant
+   paper three ways: it **resolves** the gap (filler), it comes close
+   (near-miss), or it **restates** the gap as open — a restater is not an
+   attack survivor's problem, it is extra evidence of demand.
 
 ## Verdicts
 
@@ -45,6 +50,8 @@ surviving you.
   marginal; the gap statement survives only in a narrower form (say which).
 - `survived` — your best attacks found no filler; nearest misses attached.
 
+Restaters never lower a verdict — only fillers and near-misses do.
+
 ## Output (OUTPUT FILE)
 
 ```json
@@ -52,7 +59,7 @@ surviving you.
  "reason": "1-3 sentences",
  "queries_run": 6,
  "evidence": [{"id": "doi:...", "title": "...", "year": 2024,
-                "role": "filler|near-miss"}]}
+                "role": "filler|near-miss|restater"}]}
 ```
 
 ## Boundaries
